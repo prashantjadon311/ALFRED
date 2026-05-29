@@ -1,0 +1,109 @@
+"use client";
+
+import { AnimatePresence, motion } from "framer-motion";
+import { Menu } from "lucide-react";
+import { usePathname } from "next/navigation";
+import type { ReactNode } from "react";
+import { useEffect, useState } from "react";
+import { AiPageLoader } from "@/components/shared/AiPageLoader";
+import { Button } from "@/components/shared/Button";
+import { CommandPalette } from "@/components/shared/CommandPalette";
+import { useChatStore } from "@/store/chat-store";
+import { useUiStore } from "@/store/ui-store";
+import { AppSidebar } from "./AppSidebar";
+
+export function AppShell({ children }: { children: ReactNode }) {
+  const pathname = usePathname();
+  const theme = useUiStore((state) => state.theme);
+  const pageLoading = useUiStore((state) => state.pageLoading);
+  const setPageLoading = useUiStore((state) => state.setPageLoading);
+  const fullScreenPage = useUiStore((state) => state.fullScreenPage);
+  const setFullScreenPage = useUiStore((state) => state.setFullScreenPage);
+  const setCommandPaletteOpen = useUiStore((state) => state.setCommandPaletteOpen);
+  const setMobileSidebarOpen = useUiStore((state) => state.setMobileSidebarOpen);
+  const toggleMobileSidebar = useUiStore((state) => state.toggleMobileSidebar);
+  const createChat = useChatStore((state) => state.createChat);
+  const [initialLoading, setInitialLoading] = useState(true);
+
+  useEffect(() => {
+    document.documentElement.classList.toggle("dark", theme === "dark");
+    document.documentElement.classList.toggle("light", theme === "light");
+  }, [theme]);
+
+  useEffect(() => {
+    const timeout = window.setTimeout(() => setInitialLoading(false), 520);
+    return () => window.clearTimeout(timeout);
+  }, []);
+
+  useEffect(() => {
+    setFullScreenPage(null);
+    setPageLoading(true);
+    const timeout = window.setTimeout(() => setPageLoading(false), 220);
+    return () => window.clearTimeout(timeout);
+  }, [pathname, setFullScreenPage, setPageLoading]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const meta = event.metaKey || event.ctrlKey;
+      if (meta && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        setCommandPaletteOpen(true);
+      }
+      if (meta && event.key.toLowerCase() === "n") {
+        event.preventDefault();
+        createChat("New agent session");
+      }
+      if (event.key === "Escape") {
+        setCommandPaletteOpen(false);
+        setMobileSidebarOpen(false);
+        setFullScreenPage(null);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [createChat, setCommandPaletteOpen, setFullScreenPage, setMobileSidebarOpen]);
+
+  const isLoginPage = pathname === "/login";
+  const isPlaygroundPage = pathname.startsWith("/playground");
+
+  if (isLoginPage) return <>{children}</>;
+
+  return (
+    <div className="flex h-screen overflow-hidden bg-transparent text-slate-100">
+      {fullScreenPage ? null : <AppSidebar />}
+      {!fullScreenPage ? (
+        <Button
+          size="icon"
+          variant="secondary"
+          aria-label="Open navigation"
+          className="fixed left-3 top-3 z-40 md:hidden"
+          onClick={toggleMobileSidebar}
+        >
+          <Menu className="h-4 w-4" />
+        </Button>
+      ) : null}
+      <div className="flex min-w-0 flex-1 flex-col">
+        <AnimatePresence mode="wait">
+          <motion.main
+            key={pathname}
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 8 }}
+            transition={{ duration: 0.2 }}
+            className={
+              fullScreenPage
+                ? "min-h-0 flex-1 overflow-hidden p-0"
+                : isPlaygroundPage
+                  ? "min-h-0 flex-1 overflow-hidden pt-14 md:p-0"
+                  : "custom-scrollbar min-h-0 flex-1 overflow-y-auto p-3 pt-16 md:p-4"
+            }
+          >
+            {children}
+          </motion.main>
+        </AnimatePresence>
+      </div>
+      <CommandPalette />
+      <AiPageLoader visible={initialLoading || pageLoading} />
+    </div>
+  );
+}
