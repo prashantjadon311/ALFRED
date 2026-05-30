@@ -1,8 +1,9 @@
 import { models as mockModels, providers as mockProviders } from "@/lib/mock-data";
 import { api, isApiMode } from "@/lib/api-client";
 import type { ModelConfig, ModelProvider } from "@/lib/types";
+import { demoWait } from "./mock-latency";
 
-const wait = () => new Promise((resolve) => setTimeout(resolve, 120));
+const wait = () => demoWait(120);
 const health = (value?: string): ModelProvider["health"] => value === "healthy" ? "Healthy" : value === "degraded" ? "Degraded" : "Offline";
 
 function normalizeProvider(provider: any): ModelProvider {

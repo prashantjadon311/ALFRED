@@ -5,8 +5,17 @@ import { WorkflowRunsRepository } from "../../repositories/workflow-runs.reposit
 import { ModelProvidersRepository } from "../../repositories/model-providers.repository";
 import { UsageService } from "../usage/usage.service";
 
+type DashboardSummary = {
+  projectStats: { total: number; byStatus: Record<string, number> };
+  workflowStats: { total: number; byStatus: Record<string, number> };
+  usageSummary: unknown;
+  providerHealth: unknown[];
+};
+
 @Injectable()
 export class DashboardService {
+  private readonly summaryCache = new Map<string, { expiresAt: number; value: DashboardSummary }>();
+
   constructor(
     private readonly projects: ProjectsRepository,
     private readonly runs: WorkflowRunsRepository,
@@ -15,26 +24,37 @@ export class DashboardService {
   ) {}
 
   async summary(userId: ObjectId) {
+    const cacheKey = userId.toHexString();
+    const cached = this.summaryCache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) return cached.value;
     const [projectStats, workflowStats, usageSummary, providerHealth] = await Promise.all([
       this.getProjectStats(userId),
       this.getWorkflowStats(userId),
       this.usage.summary(userId),
       this.getProviderHealth(userId)
     ]);
-    return { projectStats, workflowStats, usageSummary, providerHealth };
+    const value: DashboardSummary = { projectStats, workflowStats, usageSummary, providerHealth };
+    this.summaryCache.set(cacheKey, { expiresAt: Date.now() + 10_000, value });
+    return value;
   }
 
   private async getProjectStats(userId: ObjectId) {
-    const { items, total } = await this.projects.listByUser(userId, {} as any, { limit: 1000, projection: { status: 1 } });
-    const byStatus: Record<string, number> = {};
-    for (const p of items) byStatus[(p as any).status] = (byStatus[(p as any).status] ?? 0) + 1;
+    const rows = await this.projects.collection().aggregate<{ _id: string; count: number }>([
+      { $match: { userId } },
+      { $group: { _id: "$status", count: { $sum: 1 } } }
+    ]).toArray();
+    const byStatus = Object.fromEntries(rows.map((row) => [row._id ?? "unknown", row.count]));
+    const total = rows.reduce((sum, row) => sum + row.count, 0);
     return { total, byStatus };
   }
 
   private async getWorkflowStats(userId: ObjectId) {
-    const { items, total } = await this.runs.listByUser(userId, {} as any, { limit: 1000, projection: { status: 1 } });
-    const byStatus: Record<string, number> = {};
-    for (const r of items) byStatus[(r as any).status] = (byStatus[(r as any).status] ?? 0) + 1;
+    const rows = await this.runs.collection().aggregate<{ _id: string; count: number }>([
+      { $match: { userId } },
+      { $group: { _id: "$status", count: { $sum: 1 } } }
+    ]).toArray();
+    const byStatus = Object.fromEntries(rows.map((row) => [row._id ?? "unknown", row.count]));
+    const total = rows.reduce((sum, row) => sum + row.count, 0);
     return { total, byStatus };
   }
 

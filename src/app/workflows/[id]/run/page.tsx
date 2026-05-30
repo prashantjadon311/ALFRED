@@ -1,16 +1,21 @@
 "use client";
 
 import { CheckCircle2, Pause, Play, Square, UserCheck } from "lucide-react";
+import dynamic from "next/dynamic";
 import { notFound } from "next/navigation";
 import { Button } from "@/components/shared/Button";
 import { GlassCard } from "@/components/shared/GlassCard";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { BudgetMeter } from "@/components/workflow/BudgetMeter";
 import { TokenCostMeter } from "@/components/workflow/TokenCostMeter";
-import { WorkflowGraph } from "@/components/workflow/WorkflowGraph";
 import { critiqueIssues } from "@/lib/mock-data";
 import { formatCurrency, formatTokens } from "@/lib/utils";
 import { useWorkflowStore } from "@/store/workflow-store";
+
+const WorkflowGraph = dynamic(() => import("@/components/workflow/WorkflowGraph").then((mod) => mod.WorkflowGraph), {
+  ssr: false,
+  loading: () => <div className="h-[360px] animate-pulse rounded-panel border border-surface-darkBorder bg-surface-darkElevated/50" />
+});
 
 const logs = [
   "14:18:02 requirement-lock completed: contract hash mock-8ad2",

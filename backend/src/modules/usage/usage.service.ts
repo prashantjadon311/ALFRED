@@ -7,6 +7,8 @@ import { ChatsRepository } from "../../repositories/chats.repository";
 
 @Injectable()
 export class UsageService {
+  private readonly cache = new Map<string, { expiresAt: number; value: unknown }>();
+
   constructor(
     private readonly usage: UsageEventsRepository,
     private readonly projects: ProjectsRepository,
@@ -15,6 +17,7 @@ export class UsageService {
   ) {}
 
   async record(input: { userId: ObjectId; projectId?: ObjectId; workflowRunId?: ObjectId; chatId?: ObjectId; providerType: string; modelName: string; inputTokens: number; outputTokens: number; costUsd: number; latencyMs: number; source: string }) {
+    this.invalidateUser(input.userId);
     const event = await this.usage.create({ ...input, totalTokens: input.inputTokens + input.outputTokens, createdAt: new Date() } as any);
     if (input.projectId) await this.projects.incrementUsage(input.projectId, input.userId, input.inputTokens, input.outputTokens, input.costUsd);
     if (input.workflowRunId) await this.runs.incrementUsage(input.workflowRunId, input.userId, input.inputTokens, input.outputTokens, input.costUsd);
@@ -22,12 +25,30 @@ export class UsageService {
     return event;
   }
 
+  private invalidateUser(userId: ObjectId) {
+    const prefix = `${userId.toHexString()}:`;
+    for (const key of this.cache.keys()) {
+      if (key.startsWith(prefix)) this.cache.delete(key);
+    }
+  }
+
+  private async cached<T>(userId: ObjectId, scope: string, load: () => Promise<T>, ttlMs = 10_000): Promise<T> {
+    const key = `${userId.toHexString()}:${scope}`;
+    const cached = this.cache.get(key);
+    if (cached && cached.expiresAt > Date.now()) return cached.value as T;
+    const value = await load();
+    this.cache.set(key, { expiresAt: Date.now() + ttlMs, value });
+    return value;
+  }
+
   async summary(userId: ObjectId) {
-    const rows = await this.usage.collection().aggregate([
-      { $match: { userId } },
-      { $group: { _id: null, inputTokens: { $sum: "$inputTokens" }, outputTokens: { $sum: "$outputTokens" }, totalTokens: { $sum: "$totalTokens" }, costUsd: { $sum: "$costUsd" } } }
-    ]).toArray();
-    return rows[0] ?? { inputTokens: 0, outputTokens: 0, totalTokens: 0, costUsd: 0 };
+    return this.cached(userId, "summary", async () => {
+      const rows = await this.usage.collection().aggregate([
+        { $match: { userId } },
+        { $group: { _id: null, inputTokens: { $sum: "$inputTokens" }, outputTokens: { $sum: "$outputTokens" }, totalTokens: { $sum: "$totalTokens" }, costUsd: { $sum: "$costUsd" } } }
+      ]).toArray();
+      return rows[0] ?? { inputTokens: 0, outputTokens: 0, totalTokens: 0, costUsd: 0 };
+    });
   }
 
   byProvider(userId: ObjectId) { return this.groupBy(userId, "$providerType"); }
@@ -35,20 +56,24 @@ export class UsageService {
   byProject(userId: ObjectId) { return this.groupBy(userId, "$projectId"); }
 
   daily(userId: ObjectId) {
-    return this.usage.collection().aggregate([
-      { $match: { userId } },
-      {
-        $group: {
-          _id: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } },
-          inputTokens: { $sum: "$inputTokens" },
-          outputTokens: { $sum: "$outputTokens" },
-          totalTokens: { $sum: "$totalTokens" },
-          costUsd: { $sum: "$costUsd" }
-        }
-      },
-      { $sort: { _id: 1 } },
-      { $project: { _id: 0, date: "$_id", inputTokens: 1, outputTokens: 1, totalTokens: 1, costUsd: { $round: ["$costUsd", 6] } } }
-    ]).toArray();
+    return this.cached(userId, "daily", () =>
+      this.usage.collection().aggregate([
+        { $match: { userId } },
+        {
+          $group: {
+            _id: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } },
+            inputTokens: { $sum: "$inputTokens" },
+            outputTokens: { $sum: "$outputTokens" },
+            totalTokens: { $sum: "$totalTokens" },
+            costUsd: { $sum: "$costUsd" }
+          }
+        },
+        { $sort: { _id: -1 } },
+        { $limit: 90 },
+        { $sort: { _id: 1 } },
+        { $project: { _id: 0, date: "$_id", inputTokens: 1, outputTokens: 1, totalTokens: 1, costUsd: { $round: ["$costUsd", 6] } } }
+      ]).toArray()
+    );
   }
 
   async budgetAlerts(userId: ObjectId) {
@@ -63,10 +88,13 @@ export class UsageService {
   }
 
   private groupBy(userId: ObjectId, field: string) {
-    return this.usage.collection().aggregate([
-      { $match: { userId } },
-      { $group: { _id: field, tokens: { $sum: "$totalTokens" }, costUsd: { $sum: "$costUsd" } } },
-      { $sort: { costUsd: -1 } }
-    ]).toArray();
+    return this.cached(userId, `group:${field}`, () =>
+      this.usage.collection().aggregate([
+        { $match: { userId } },
+        { $group: { _id: field, tokens: { $sum: "$totalTokens" }, costUsd: { $sum: "$costUsd" } } },
+        { $sort: { costUsd: -1 } },
+        { $limit: 50 }
+      ]).toArray()
+    );
   }
 }

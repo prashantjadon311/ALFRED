@@ -7,8 +7,9 @@ import {
 } from "@/lib/mock-data";
 import { api, isApiMode } from "@/lib/api-client";
 import type { Artifact, CritiqueIssue, Project, ProjectType, RequirementContract } from "@/lib/types";
+import { demoWait } from "./mock-latency";
 
-const wait = () => new Promise((resolve) => setTimeout(resolve, 120));
+const wait = () => demoWait(120);
 
 const title = (value?: string) => (value ? value.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()) : "");
 const projectTypeToApi = (value?: string) => (value ?? "software").toLowerCase();

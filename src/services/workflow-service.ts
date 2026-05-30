@@ -1,8 +1,9 @@
 import { agentNodes as mockNodes, workflows as mockWorkflows } from "@/lib/mock-data";
 import { api, isApiMode } from "@/lib/api-client";
 import type { WorkflowRun, WorkflowStatus } from "@/lib/types";
+import { demoWait } from "./mock-latency";
 
-const wait = () => new Promise((resolve) => setTimeout(resolve, 120));
+const wait = () => demoWait(120);
 
 function patchRun(id: string, patch: Partial<WorkflowRun>): WorkflowRun {
   const run = mockWorkflows.find((workflow) => workflow.id === id) ?? mockWorkflows[0];

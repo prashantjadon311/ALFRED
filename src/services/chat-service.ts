@@ -1,9 +1,10 @@
 import { chats as mockChats, compareResponses } from "@/lib/mock-data";
 import { api, isApiMode } from "@/lib/api-client";
 import type { Chat, Message } from "@/lib/types";
+import { demoWait } from "./mock-latency";
 
 const now = () => new Date().toISOString();
-const wait = () => new Promise((resolve) => setTimeout(resolve, 140));
+const wait = () => demoWait(140);
 
 function mockAssistantMessage(content: string, model = "Mock GPT-5"): Message {
   const tokens = Math.max(280, Math.ceil(content.length / 3) + 940);

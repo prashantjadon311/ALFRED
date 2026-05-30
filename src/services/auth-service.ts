@@ -1,4 +1,5 @@
 import { api, clearTokens, isApiMode, setTokens } from "@/lib/api-client";
+import { demoWait } from "./mock-latency";
 
 export interface AuthUser {
   userId: string;
@@ -21,7 +22,7 @@ function normalizeUser(user: any): AuthUser {
 export const authService = {
   login: async (email: string, password: string): Promise<AuthUser> => {
     if (!isApiMode()) {
-      await new Promise((resolve) => setTimeout(resolve, 240));
+      await demoWait(240);
       if (!email.trim() || !password.trim()) throw new Error("Enter the mocked demo credentials.");
       setTokens();
       return { ...mockUser, email };

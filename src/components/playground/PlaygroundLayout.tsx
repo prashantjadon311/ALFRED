@@ -1,7 +1,7 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import { useChatStore } from "@/store/chat-store";
 import { useUiStore } from "@/store/ui-store";
@@ -10,11 +10,16 @@ import { ConversationSidebar } from "./ConversationSidebar";
 
 export function PlaygroundLayout() {
   const activeChatId = useChatStore((state) => state.activeChatId);
+  const loadChats = useChatStore((state) => state.loadFromApi);
   const setActiveChatId = useChatStore((state) => state.setActiveChatId);
   const createChat = useChatStore((state) => state.createChat);
   const fullScreenPage = useUiStore((state) => state.fullScreenPage);
   const fullScreen = fullScreenPage === "playground";
   const [conversationOpen, setConversationOpen] = useState(false);
+
+  useEffect(() => {
+    void loadChats();
+  }, [loadChats]);
 
   const create = () => {
     createChat("New agent session");

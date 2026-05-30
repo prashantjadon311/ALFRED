@@ -1,8 +1,9 @@
 import { artifacts } from "@/lib/mock-data";
 import { api, isApiMode } from "@/lib/api-client";
 import type { Artifact } from "@/lib/types";
+import { demoWait } from "./mock-latency";
 
-const wait = () => new Promise((resolve) => setTimeout(resolve, 120));
+const wait = () => demoWait(120);
 function normalizeArtifact(artifact: any): Artifact {
   return {
     id: artifact.id,

@@ -16,6 +16,7 @@ export function ChatPane({ chatId }: { chatId: string }) {
   const branchChat = useChatStore((state) => state.branchChat);
   const setActiveChatId = useChatStore((state) => state.setActiveChatId);
   const createChat = useChatStore((state) => state.createChat);
+  const loadMessagesForChat = useChatStore((state) => state.loadMessagesForChat);
   const [artifact, setArtifact] = useState<Message | null>(null);
   const chat = useMemo(() => chats.find((item) => item.id === chatId) ?? chats[0], [chatId, chats]);
 
@@ -26,6 +27,10 @@ export function ChatPane({ chatId }: { chatId: string }) {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
+
+  useEffect(() => {
+    if (chat?.id) void loadMessagesForChat(chat.id);
+  }, [chat?.id, loadMessagesForChat]);
 
   if (!chat) {
     return (

@@ -1,11 +1,11 @@
 "use client";
 
 import { Bot, BrainCircuit, CircleDollarSign, Clock3, FolderKanban, Gauge, MessageSquarePlus, Settings, ShieldAlert, Workflow } from "lucide-react";
+import dynamic from "next/dynamic";
 import { Button } from "@/components/shared/Button";
 import { GlassCard } from "@/components/shared/GlassCard";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { ActivityTimeline } from "@/components/dashboard/ActivityTimeline";
-import { MiniUsageChart } from "@/components/dashboard/MiniUsageChart";
 import { ProviderHealthCard } from "@/components/dashboard/ProviderHealthCard";
 import { QuickActionCard } from "@/components/dashboard/QuickActionCard";
 import { StatCard } from "@/components/dashboard/StatCard";
@@ -14,6 +14,10 @@ import { formatCurrency, formatTokens } from "@/lib/utils";
 
 const loop = ["User Input", "Requirement Lock", "ChatGPT", "Gemini", "Consensus", "Claude Critic", "Final Output"];
 const loopStatuses = ["Completed", "Completed", "Completed", "Running", "Queued", "Guarded", "Queued"];
+const MiniUsageChart = dynamic(() => import("@/components/dashboard/MiniUsageChart").then((mod) => mod.MiniUsageChart), {
+  ssr: false,
+  loading: () => <div className="h-[230px] animate-pulse rounded-card border border-surface-darkBorder bg-surface-darkElevated/50" />
+});
 
 export default function DashboardPage() {
   const activeRuns = workflows.filter((workflow) => workflow.status === "Running" || workflow.status === "Waiting Approval");

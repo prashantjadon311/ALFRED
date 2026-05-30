@@ -1,6 +1,7 @@
 "use client";
 
 import { CircleDollarSign, Download, LockKeyhole, MessageSquareWarning, Pause, Play, Rocket, WandSparkles } from "lucide-react";
+import dynamic from "next/dynamic";
 import { notFound } from "next/navigation";
 import { useState } from "react";
 import { Button } from "@/components/shared/Button";
@@ -12,9 +13,13 @@ import { CritiquePanel } from "@/components/projects/CritiquePanel";
 import { ExecutionTimeline } from "@/components/projects/ExecutionTimeline";
 import { ProjectMemoryPanel } from "@/components/projects/ProjectMemoryPanel";
 import { RequirementContractCard } from "@/components/projects/RequirementContractCard";
-import { WorkflowGraph } from "@/components/workflow/WorkflowGraph";
 import { artifacts, chats, critiqueIssues, projectMemory, projects, requirementContract, workflows } from "@/lib/mock-data";
 import { formatCurrency, formatTokens } from "@/lib/utils";
+
+const WorkflowGraph = dynamic(() => import("@/components/workflow/WorkflowGraph").then((mod) => mod.WorkflowGraph), {
+  ssr: false,
+  loading: () => <div className="h-[360px] animate-pulse rounded-panel border border-surface-darkBorder bg-surface-darkElevated/50" />
+});
 
 export default function ProjectDetailPage({ params }: { params: { id: string } }) {
   const [notice, setNotice] = useState("");

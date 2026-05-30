@@ -1,16 +1,17 @@
 "use client";
 
-import { AnimatePresence, motion } from "framer-motion";
 import { Menu } from "lucide-react";
+import dynamic from "next/dynamic";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import { AiPageLoader } from "@/components/shared/AiPageLoader";
 import { Button } from "@/components/shared/Button";
-import { CommandPalette } from "@/components/shared/CommandPalette";
 import { useChatStore } from "@/store/chat-store";
 import { useUiStore } from "@/store/ui-store";
 import { AppSidebar } from "./AppSidebar";
+
+const CommandPalette = dynamic(() => import("@/components/shared/CommandPalette").then((mod) => mod.CommandPalette), { ssr: false });
 
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
@@ -19,6 +20,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const setPageLoading = useUiStore((state) => state.setPageLoading);
   const fullScreenPage = useUiStore((state) => state.fullScreenPage);
   const setFullScreenPage = useUiStore((state) => state.setFullScreenPage);
+  const commandPaletteOpen = useUiStore((state) => state.commandPaletteOpen);
   const setCommandPaletteOpen = useUiStore((state) => state.setCommandPaletteOpen);
   const setMobileSidebarOpen = useUiStore((state) => state.setMobileSidebarOpen);
   const toggleMobileSidebar = useUiStore((state) => state.toggleMobileSidebar);
@@ -83,26 +85,19 @@ export function AppShell({ children }: { children: ReactNode }) {
         </Button>
       ) : null}
       <div className="flex min-w-0 flex-1 flex-col">
-        <AnimatePresence mode="wait">
-          <motion.main
-            key={pathname}
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 8 }}
-            transition={{ duration: 0.2 }}
-            className={
-              fullScreenPage
-                ? "min-h-0 flex-1 overflow-hidden p-0"
-                : isPlaygroundPage
-                  ? "min-h-0 flex-1 overflow-hidden pt-14 md:p-0"
-                  : "custom-scrollbar min-h-0 flex-1 overflow-y-auto p-3 pt-16 md:p-4"
-            }
-          >
-            {children}
-          </motion.main>
-        </AnimatePresence>
+        <main
+          className={
+            fullScreenPage
+              ? "min-h-0 flex-1 overflow-hidden p-0"
+              : isPlaygroundPage
+                ? "min-h-0 flex-1 overflow-hidden pt-14 md:p-0"
+                : "custom-scrollbar min-h-0 flex-1 overflow-y-auto p-3 pt-16 md:p-4"
+          }
+        >
+          {children}
+        </main>
       </div>
-      <CommandPalette />
+      {commandPaletteOpen ? <CommandPalette /> : null}
       <AiPageLoader visible={initialLoading || pageLoading} />
     </div>
   );

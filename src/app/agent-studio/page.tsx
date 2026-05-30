@@ -1,16 +1,21 @@
 "use client";
 
 import { CirclePlus, Play, Save, Workflow } from "lucide-react";
+import dynamic from "next/dynamic";
 import { useState } from "react";
 import { Button } from "@/components/shared/Button";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { NodePropertiesPanel } from "@/components/workflow/NodePropertiesPanel";
-import { WorkflowGraph } from "@/components/workflow/WorkflowGraph";
 import { WorkflowStatusBar } from "@/components/workflow/WorkflowStatusBar";
 import { workflows } from "@/lib/mock-data";
 import { cn } from "@/lib/utils";
 import { useUiStore } from "@/store/ui-store";
 import { useWorkflowStore } from "@/store/workflow-store";
+
+const WorkflowGraph = dynamic(() => import("@/components/workflow/WorkflowGraph").then((mod) => mod.WorkflowGraph), {
+  ssr: false,
+  loading: () => <div className="h-full min-h-[420px] animate-pulse rounded-panel border border-surface-darkBorder bg-surface-darkElevated/50" />
+});
 
 export default function AgentStudioPage() {
   const activeWorkflow = workflows[0];

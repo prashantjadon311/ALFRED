@@ -13,7 +13,7 @@ import { redactPaths } from "./security/redaction.util";
 async function bootstrap() {
   const adapter = new FastifyAdapter({
     logger: {
-      level: process.env.LOG_LEVEL ?? "debug",
+      level: process.env.LOG_LEVEL ?? "info",
       redact: redactPaths
     }
   });
@@ -33,13 +33,15 @@ async function bootstrap() {
 
   app.useGlobalFilters(new GlobalExceptionFilter());
 
-  const swaggerConfig = new DocumentBuilder()
-    .setTitle("A.L.F.R.E.D. Backend API")
-    .setDescription("Agentic Logic Framework for Real-time Execution and Deployment")
-    .setVersion("0.1.0")
-    .addBearerAuth()
-    .build();
-  SwaggerModule.setup("docs", app, SwaggerModule.createDocument(app, swaggerConfig));
+  if ((process.env.NODE_ENV ?? "development") !== "production") {
+    const swaggerConfig = new DocumentBuilder()
+      .setTitle("A.L.F.R.E.D. Backend API")
+      .setDescription("Agentic Logic Framework for Real-time Execution and Deployment")
+      .setVersion("0.1.0")
+      .addBearerAuth()
+      .build();
+    SwaggerModule.setup("docs", app, SwaggerModule.createDocument(app, swaggerConfig));
+  }
 
   await app.listen(config.get<number>("port") ?? 4000, "0.0.0.0");
 }

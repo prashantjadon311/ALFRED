@@ -15,6 +15,7 @@ export function ChatWorkspace({ chatId, onOpenConversations }: { chatId: string;
   const chats = useChatStore((state) => state.chats);
   const branchChat = useChatStore((state) => state.branchChat);
   const createChat = useChatStore((state) => state.createChat);
+  const loadMessagesForChat = useChatStore((state) => state.loadMessagesForChat);
   const [artifact, setArtifact] = useState<Message | null>(null);
   const chat = useMemo(() => chats.find((item) => item.id === chatId) ?? chats[0], [chatId, chats]);
 
@@ -25,6 +26,10 @@ export function ChatWorkspace({ chatId, onOpenConversations }: { chatId: string;
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
+
+  useEffect(() => {
+    if (chat?.id) void loadMessagesForChat(chat.id);
+  }, [chat?.id, loadMessagesForChat]);
 
   if (!chat) {
     return (

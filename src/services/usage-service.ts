@@ -1,7 +1,8 @@
 import { budgetRules as mockBudget, projectCosts as mockProjectCosts, providerCosts as mockProviderCosts, usageSeries as mockSeries } from "@/lib/mock-data";
 import { api, isApiMode } from "@/lib/api-client";
+import { demoWait } from "./mock-latency";
 
-const wait = () => new Promise((resolve) => setTimeout(resolve, 120));
+const wait = () => demoWait(120);
 
 export const usageService = {
   getUsageSeries: async () => {

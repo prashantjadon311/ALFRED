@@ -9,9 +9,10 @@ import {
   type WorkspaceCreateInput,
   type WorkspaceUpdateInput
 } from "@/lib/workspace-utils";
+import { demoWait } from "./mock-latency";
 
 const STORAGE_KEY = "alfred_workspaces_state";
-const wait = () => new Promise((resolve) => setTimeout(resolve, 80));
+const wait = () => demoWait(80);
 
 interface WorkspaceState {
   workspaces: Workspace[];

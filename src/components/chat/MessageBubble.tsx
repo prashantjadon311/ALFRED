@@ -2,15 +2,19 @@
 
 import { motion } from "framer-motion";
 import { Copy, Download, GitBranch, RefreshCw } from "lucide-react";
+import dynamic from "next/dynamic";
 import ReactMarkdown from "react-markdown";
-import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
-import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { ArtifactOpenButton } from "@/components/playground/ArtifactOpenButton";
 import { Button } from "@/components/shared/Button";
 import { detectLanguage } from "@/lib/markdown";
 import type { Message } from "@/lib/types";
 import { cn, contentLooksLikeArtifact } from "@/lib/utils";
 import { TokenFooter } from "./TokenFooter";
+
+const CodeBlockHighlighter = dynamic(() => import("./CodeBlockHighlighter").then((mod) => mod.CodeBlockHighlighter), {
+  ssr: false,
+  loading: () => <pre className="overflow-x-auto p-4 text-sm text-slate-300">Loading code...</pre>
+});
 
 export function MessageBubble({
   message,
@@ -81,9 +85,7 @@ export function MessageBubble({
                         Copy code
                       </button>
                     </div>
-                    <SyntaxHighlighter language={language} style={oneDark} showLineNumbers customStyle={{ margin: 0, background: "transparent", fontSize: 13, color: "var(--code-text)", overflowX: "auto" }}>
-                      {code}
-                    </SyntaxHighlighter>
+                    <CodeBlockHighlighter code={code} language={language} />
                   </div>
                 );
               }

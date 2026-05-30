@@ -11,7 +11,10 @@ interface ChatStore {
   folders: ChatFolder[];
   activeChatId: string;
   loaded: boolean;
+  messagesLoadedByChatId: Record<string, boolean>;
+  messagesLoadingByChatId: Record<string, boolean>;
   loadFromApi: () => Promise<void>;
+  loadMessagesForChat: (chatId: string) => Promise<void>;
   createChat: (title?: string, folderId?: string) => string;
   createFolder: (name: string, projectId?: string) => string;
   renameFolder: (folderId: string, name: string) => void;
@@ -29,10 +32,34 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   folders: mockFolders,
   activeChatId: mockChats[0]?.id ?? "",
   loaded: false,
+  messagesLoadedByChatId: {},
+  messagesLoadingByChatId: {},
   loadFromApi: async () => {
     if (!isApiMode() || get().loaded) return;
-    const chats = await Promise.all((await chatService.listChats()).map(async (chat) => ({ ...chat, messages: await chatService.getMessages(chat.id) })));
-    if (chats.length) set({ chats, activeChatId: chats[0].id, loaded: true });
+    const chats = await chatService.listChats();
+    set((state) => {
+      const currentById = new Map(state.chats.map((chat) => [chat.id, chat]));
+      const nextChats = chats.map((chat) => ({ ...chat, messages: currentById.get(chat.id)?.messages ?? chat.messages ?? [] }));
+      return {
+        chats: nextChats,
+        activeChatId: nextChats.some((chat) => chat.id === state.activeChatId) ? state.activeChatId : nextChats[0]?.id ?? "",
+        loaded: true
+      };
+    });
+  },
+  loadMessagesForChat: async (chatId: string) => {
+    if (!isApiMode() || !chatId || get().messagesLoadedByChatId[chatId] || get().messagesLoadingByChatId[chatId]) return;
+    set((state) => ({ messagesLoadingByChatId: { ...state.messagesLoadingByChatId, [chatId]: true } }));
+    try {
+      const messages = await chatService.getMessages(chatId);
+      set((state) => ({
+        chats: state.chats.map((chat) => (chat.id === chatId ? { ...chat, messages } : chat)),
+        messagesLoadedByChatId: { ...state.messagesLoadedByChatId, [chatId]: true },
+        messagesLoadingByChatId: { ...state.messagesLoadingByChatId, [chatId]: false }
+      }));
+    } catch {
+      set((state) => ({ messagesLoadingByChatId: { ...state.messagesLoadingByChatId, [chatId]: false } }));
+    }
   },
   createChat: (title = "Untitled agent session", folderId) => {
     const id = `chat-${Date.now()}`;
@@ -52,7 +79,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       void chatService.createChat({ title, projectId: chat.projectId }).then((created) => {
         set((state) => ({
           chats: state.chats.map((item) => item.id === id ? { ...created, messages: [] } : item),
-          activeChatId: state.activeChatId === id ? created.id : state.activeChatId
+          activeChatId: state.activeChatId === id ? created.id : state.activeChatId,
+          messagesLoadedByChatId: { ...state.messagesLoadedByChatId, [created.id]: true },
+          messagesLoadingByChatId: { ...state.messagesLoadingByChatId, [created.id]: false }
         }));
       }).catch(() => undefined);
     }

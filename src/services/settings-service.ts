@@ -1,8 +1,9 @@
 import { budgetRules as mockBudget, promptLibrary as mockPrompts } from "@/lib/mock-data";
 import { api, isApiMode } from "@/lib/api-client";
 import type { BudgetRule, PromptItem } from "@/lib/types";
+import { demoWait } from "./mock-latency";
 
-const wait = () => new Promise((resolve) => setTimeout(resolve, 120));
+const wait = () => demoWait(120);
 const categoryMap: Record<string, string> = {
   "Product Design": "product_design",
   "Software Architecture": "software_architecture",
