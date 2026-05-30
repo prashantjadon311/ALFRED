@@ -1,8 +1,8 @@
 "use client";
 import { create } from "zustand";
-import { clearTokens, getToken, setTokens } from "@/lib/api-client";
+import { getToken, isApiMode, setTokens } from "@/lib/api-client";
+import { authService, type AuthUser } from "@/services/auth-service";
 
-interface AuthUser { userId: string; email: string; name: string; role: string; }
 const mockUser: AuthUser = { userId: "user-demo", email: "demo@alfred.local", name: "Prashant", role: "owner" };
 
 interface AuthStore {
@@ -20,23 +20,25 @@ export const useAuthStore = create<AuthStore>((set) => ({
   login: async (email, password) => {
     set({ loading: true });
     try {
-      await new Promise((resolve) => setTimeout(resolve, 240));
-      if (!email.trim() || !password.trim()) throw new Error("Enter the mocked demo credentials.");
-      setTokens();
-      set({ user: { ...mockUser, email } });
+      set({ user: await authService.login(email, password) });
     } finally {
       set({ loading: false });
     }
   },
 
   logout: async () => {
-    clearTokens();
+    await authService.logout();
     set({ user: null });
   },
 
   loadMe: async () => {
     if (typeof window === "undefined") return;
-    if (!getToken()) setTokens();
-    set({ user: mockUser });
+    if (!getToken() && !isApiMode()) setTokens();
+    if (!getToken() && isApiMode()) return;
+    try {
+      set({ user: await authService.me() });
+    } catch {
+      set({ user: mockUser });
+    }
   }
 }));

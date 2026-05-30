@@ -6,20 +6,24 @@ import { Button } from "@/components/shared/Button";
 import { GlassCard } from "@/components/shared/GlassCard";
 import { CompareGrid } from "@/components/compare/CompareGrid";
 import { compareResponses } from "@/lib/mock-data";
+import { chatService } from "@/services/chat-service";
+import { artifactService } from "@/services/artifact-service";
 
 export default function ComparePage() {
   const [paneCount, setPaneCount] = useState(3);
   const [runId, setRunId] = useState(0);
   const [selectedKey, setSelectedKey] = useState("");
   const [notice, setNotice] = useState("");
+  const [prompt, setPrompt] = useState("Design the safest agentic AI workflow for converting a raw product request into validated Codex implementation prompts.");
+  const [apiResponses, setApiResponses] = useState<typeof compareResponses | null>(null);
   const visibleResponses = useMemo(
     () =>
-      compareResponses.slice(0, paneCount).map((response, index) => ({
+      (apiResponses ?? compareResponses).slice(0, paneCount).map((response, index) => ({
         ...response,
         latency: Number((response.latency + runId * 0.1 + index * 0.03).toFixed(2)),
         tokens: response.tokens + runId * 73
       })),
-    [paneCount, runId]
+    [apiResponses, paneCount, runId]
   );
 
   const showNotice = (message: string) => {
@@ -44,17 +48,27 @@ export default function ComparePage() {
             <BrainCircuit className="h-4 w-4" /> Synced input composer
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button size="sm" variant="secondary" icon={<GitMerge className="h-4 w-4" />} onClick={() => showNotice("Merged artifact created locally from the selected model responses.")}>
+            <Button size="sm" variant="secondary" icon={<GitMerge className="h-4 w-4" />} onClick={async () => {
+              await artifactService.createArtifact({ title: "Merged Compare Artifact", type: "markdown", content: visibleResponses.map((item) => `## ${item.model}\n${item.response}`).join("\n\n") });
+              showNotice("Merged artifact created from selected model responses.");
+            }}>
               Create merged artifact
             </Button>
-            <Button size="sm" variant="primary" icon={<Send className="h-4 w-4" />} onClick={() => { setRunId((id) => id + 1); showNotice("Mock compare run completed for visible panes."); }}>
+            <Button size="sm" variant="primary" icon={<Send className="h-4 w-4" />} onClick={async () => {
+              const models = visibleResponses.map((item) => ({ providerType: item.provider.toLowerCase().includes("gemini") ? "gemini" : item.provider.toLowerCase().includes("anthropic") ? "anthropic" : item.provider.toLowerCase().includes("ollama") ? "ollama" : "mock", modelName: item.model }));
+              const results = await chatService.llmCompare(prompt, models) as any[];
+              setApiResponses(results.map((item) => ({ model: item.model?.modelName ?? item.modelName ?? "Mock", provider: item.providerType ?? item.provider ?? item.model?.providerType ?? "mock", response: item.content ?? item.response, tokens: (item.inputTokens ?? 0) + (item.outputTokens ?? item.tokens ?? 0), cost: item.costUsd ?? item.cost ?? 0, latency: item.latencyMs ? item.latencyMs / 1000 : item.latency ?? 0 })) as typeof compareResponses);
+              setRunId((id) => id + 1);
+              showNotice("Compare run completed for visible panes.");
+            }}>
               Run compare
             </Button>
           </div>
         </div>
         <textarea
           className="max-h-36 min-h-24 w-full resize-y rounded-card border border-surface-darkBorder bg-surface-darkElevated/70 p-3 text-sm leading-6 text-slate-100 placeholder:text-muted"
-          defaultValue="Design the safest agentic AI workflow for converting a raw product request into validated Codex implementation prompts."
+          value={prompt}
+          onChange={(event) => setPrompt(event.target.value)}
         />
       </GlassCard>
 

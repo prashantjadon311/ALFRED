@@ -1,6 +1,8 @@
 import { create } from "zustand";
 import { workspaces as mockWorkspaces } from "@/lib/mock-data";
 import type { Workspace } from "@/lib/types";
+import { isApiMode } from "@/lib/api-client";
+import { workspaceService } from "@/services/workspace-service";
 import {
   createWorkspaceRecord,
   getVisibleWorkspaces,
@@ -48,7 +50,7 @@ interface WorkspaceStore {
   hydrate: () => void;
   getActiveWorkspace: () => Workspace | undefined;
   switchWorkspace: (workspaceId: string) => void;
-  createWorkspace: (input: string | WorkspaceCreateInput, description?: string) => string;
+  createWorkspace: (input: string | WorkspaceCreateInput, description?: string) => Promise<string>;
   updateWorkspace: (workspaceId: string, patch: WorkspaceUpdateInput) => void;
   renameWorkspace: (workspaceId: string, name: string) => void;
   setActiveWorkspace: (workspaceId: string) => void;
@@ -64,11 +66,16 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     const stored = readStoredState();
     if (stored) {
       set({ ...stored, hydrated: true });
-      return;
+    } else {
+      const state = defaultState();
+      writeStoredState(state);
+      set({ ...state, hydrated: true });
     }
-    const state = defaultState();
-    writeStoredState(state);
-    set({ ...state, hydrated: true });
+    if (!isApiMode()) return;
+    void workspaceService.getWorkspaces().then((workspaces) => {
+      const activeWorkspaceId = workspaces.find((workspace) => workspace.active)?.id ?? workspaces[0]?.id ?? "";
+      set({ workspaces, activeWorkspaceId, hydrated: true });
+    }).catch(() => undefined);
   },
 
   getActiveWorkspace: () => {
@@ -78,10 +85,10 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
 
   switchWorkspace: (workspaceId) => get().setActiveWorkspace(workspaceId),
 
-  createWorkspace: (input, description = "Agentic workspace") => {
+  createWorkspace: async (input, description = "Agentic workspace") => {
     const timestamp = now();
     const createInput = typeof input === "string" ? { name: input, description } : input;
-    const workspace = createWorkspaceRecord(createInput, timestamp);
+    const workspace = isApiMode() ? await workspaceService.createWorkspace(createInput) : createWorkspaceRecord(createInput, timestamp);
     set((state) => {
       const workspaces = [workspace, ...state.workspaces];
       writeStoredState({ workspaces, activeWorkspaceId: state.activeWorkspaceId });
@@ -96,6 +103,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
         workspace.id === workspaceId ? updateWorkspaceRecord(workspace, patch, now()) : workspace
       );
       writeStoredState({ workspaces, activeWorkspaceId: state.activeWorkspaceId });
+      if (isApiMode()) void workspaceService.updateWorkspace(workspaceId, patch).catch(() => undefined);
       return { workspaces };
     }),
 
@@ -109,6 +117,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
         workspace.id === workspaceId ? { ...workspace, updatedAt: now() } : workspace
       );
       writeStoredState({ workspaces, activeWorkspaceId: workspaceId });
+      if (isApiMode()) void workspaceService.switchWorkspace(workspaceId).catch(() => undefined);
       return { activeWorkspaceId: workspaceId, workspaces };
     }),
 
@@ -121,6 +130,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       const activeWorkspaceId = state.activeWorkspaceId === workspaceId ? remaining[0]?.id ?? "" : state.activeWorkspaceId;
       const workspaces = selectActiveWorkspace(archivedWorkspaces, activeWorkspaceId);
       writeStoredState({ workspaces, activeWorkspaceId });
+      if (isApiMode()) void workspaceService.archiveWorkspace(workspaceId).catch(() => undefined);
       return { activeWorkspaceId, workspaces };
     }),
 
@@ -131,6 +141,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       const activeWorkspaceId = state.activeWorkspaceId === workspaceId ? visible[0]?.id ?? "" : state.activeWorkspaceId;
       const workspaces = selectActiveWorkspace(nextWorkspaces, activeWorkspaceId);
       writeStoredState({ workspaces, activeWorkspaceId });
+      if (isApiMode()) void workspaceService.deleteWorkspace(workspaceId).catch(() => undefined);
       return { activeWorkspaceId, workspaces };
     })
 }));

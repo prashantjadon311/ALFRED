@@ -39,7 +39,7 @@ export class DashboardService {
   }
 
   private async getProviderHealth(userId: ObjectId) {
-    const { items } = await this.providers.listByUser(userId, {} as any, { limit: 100, projection: { name: 1, providerType: 1, healthStatus: 1, enabled: 1, encryptedApiKey: 0 } });
+    const { items } = await this.providers.listByUser(userId, {} as any, { limit: 100, projection: { name: 1, providerType: 1, healthStatus: 1, enabled: 1 } });
     return items;
   }
 }

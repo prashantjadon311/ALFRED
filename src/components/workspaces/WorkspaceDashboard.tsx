@@ -22,9 +22,9 @@ export function WorkspaceDashboard() {
   const activeWorkspace = workspaces.find((workspace) => workspace.id === activeWorkspaceId) ?? workspaces[0];
   const visibleWorkspaces = useMemo(() => workspaces.filter((workspace) => !workspace.archived), [workspaces]);
 
-  const create = () => {
+  const create = async () => {
     if (!name.trim()) return;
-    const id = createWorkspace(name, description || "Agentic workspace");
+    const id = await createWorkspace(name, description || "Agentic workspace");
     setActiveWorkspace(id);
     setName("");
     setDescription("");

@@ -27,6 +27,22 @@ async function seed() {
   }
   const userId = user!._id as ObjectId;
 
+  const workspaceData = [
+    { name: "Prashant / Pro Workspace", description: "Primary A.L.F.R.E.D. execution workspace.", plan: "Pro", active: true, defaultProvider: "mock", defaultModel: "Mock GPT-5", monthlyTokenLimit: 1000000, monthlyCostLimit: 250, themePreference: "dark" },
+    { name: "A.L.F.R.E.D. Lab", description: "Sandbox for agent workflow and model governance experiments.", plan: "Lab", active: false, defaultProvider: "mock", defaultModel: "Mock Claude Opus", monthlyTokenLimit: 750000, monthlyCostLimit: 150, themePreference: "dark" },
+    { name: "Personal Research", description: "Research workspace for planning, reading, and prompt library work.", plan: "Personal", active: false, defaultProvider: "mock", defaultModel: "Mock Gemini", monthlyTokenLimit: 300000, monthlyCostLimit: 50, themePreference: "system" }
+  ];
+  for (const workspace of workspaceData) {
+    const existing = await db.collection("workspaces").findOne({ userId, name: workspace.name });
+    if (!existing) {
+      await db.collection("workspaces").insertOne({ userId, ...workspace, archived: false, createdAt: new Date(), updatedAt: new Date() });
+    } else {
+      await db.collection("workspaces").updateOne({ _id: existing._id }, { $set: { ...workspace, archived: false, updatedAt: new Date() } });
+    }
+  }
+  await db.collection("workspaces").updateMany({ userId, name: { $ne: "Prashant / Pro Workspace" } }, { $set: { active: false, updatedAt: new Date() } });
+  console.log("Seeded workspaces");
+
   // Providers
   const providerData = [
     { name: "Mock (Default)", providerType: "mock", baseUrl: null, maskedApiKey: "mock-••••••••••••-mode", enabled: true, healthStatus: "healthy", config: { mockMode: true } },

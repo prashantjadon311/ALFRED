@@ -23,8 +23,9 @@ import { ArtifactVersionsRepository } from "./artifact-versions.repository";
 import { ApprovalRequestsRepository } from "./approval-requests.repository";
 import { SettingsRepository } from "./settings.repository";
 import { AuditLogsRepository } from "./audit-logs.repository";
+import { WorkspacesRepository } from "./workspaces.repository";
 
-export const repositoryProviders = [UsersRepository, ProjectsRepository, RequirementContractsRepository, ProjectMemoryRepository, ModelProvidersRepository, AiModelsRepository, ChatsRepository, MessagesRepository, PromptsRepository, WorkflowsRepository, WorkflowRunsRepository, AgentNodesRepository, AgentExecutionsRepository, AgentMessagesRepository, AgentDecisionsRepository, CritiqueIssuesRepository, RevisionPatchesRepository, WorkflowEventsRepository, UsageEventsRepository, ArtifactsRepository, ArtifactVersionsRepository, ApprovalRequestsRepository, SettingsRepository, AuditLogsRepository];
+export const repositoryProviders = [UsersRepository, WorkspacesRepository, ProjectsRepository, RequirementContractsRepository, ProjectMemoryRepository, ModelProvidersRepository, AiModelsRepository, ChatsRepository, MessagesRepository, PromptsRepository, WorkflowsRepository, WorkflowRunsRepository, AgentNodesRepository, AgentExecutionsRepository, AgentMessagesRepository, AgentDecisionsRepository, CritiqueIssuesRepository, RevisionPatchesRepository, WorkflowEventsRepository, UsageEventsRepository, ArtifactsRepository, ArtifactVersionsRepository, ApprovalRequestsRepository, SettingsRepository, AuditLogsRepository];
 
 @Module({ providers: repositoryProviders, exports: repositoryProviders })
 export class RepositoriesModule {}

@@ -7,6 +7,8 @@ import { IconButton } from "@/components/shared/IconButton";
 import { useChatStore } from "@/store/chat-store";
 import { useModelStore } from "@/store/model-store";
 import { useSettingsStore } from "@/store/settings-store";
+import { isApiMode } from "@/lib/api-client";
+import { chatService } from "@/services/chat-service";
 import { AgentActionsDropdown } from "./AgentActionsDropdown";
 import { CompactModelSelector } from "./CompactModelSelector";
 import { ModeSelector, type PlaygroundMode } from "./ModeSelector";
@@ -31,11 +33,21 @@ export function ChatComposer({ chatId }: { chatId: string }) {
     textarea.style.height = `${Math.min(textarea.scrollHeight, 180)}px`;
   }, [value]);
 
-  const send = () => {
+  const send = async () => {
     if (!value.trim()) return;
     const prompt = value.trim();
     setValue("");
     setStreaming(true);
+    if (isApiMode()) {
+      try {
+        const result = await chatService.sendMessage(chatId, prompt, provider.toLowerCase().includes("mock") ? "mock" : provider.toLowerCase());
+        appendMessage(chatId, result.user);
+        appendMessage(chatId, result.assistant);
+      } finally {
+        setStreaming(false);
+      }
+      return;
+    }
     appendMessage(chatId, { role: "user", content: prompt, model: selectedModel, tokens: 820, cost: 0.02, latency: 0 });
     window.setTimeout(() => {
       appendMessage(chatId, {

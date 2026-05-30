@@ -8,6 +8,10 @@ export async function ensureMongoIndexes(db: Db) {
     db.collection("projects").createIndex({ userId: 1, status: 1 }),
     db.collection("projects").createIndex({ userId: 1, updatedAt: -1 }),
 
+    db.collection("workspaces").createIndex({ userId: 1 }),
+    db.collection("workspaces").createIndex({ userId: 1, active: 1 }),
+    db.collection("workspaces").createIndex({ userId: 1, archived: 1 }),
+
     db.collection("requirement_contracts").createIndex({ userId: 1, projectId: 1 }),
     db.collection("requirement_contracts").createIndex({ projectId: 1 }),
 

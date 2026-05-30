@@ -1,4 +1,5 @@
 import { chats as mockChats, compareResponses } from "@/lib/mock-data";
+import { api, isApiMode } from "@/lib/api-client";
 import type { Chat, Message } from "@/lib/types";
 
 const now = () => new Date().toISOString();
@@ -20,18 +21,48 @@ function mockAssistantMessage(content: string, model = "Mock GPT-5"): Message {
   };
 }
 
+function normalizeMessage(message: any): Message {
+  return {
+    id: message.id,
+    role: message.role,
+    content: message.content ?? "",
+    model: message.modelName ?? message.model ?? "Mock GPT-5",
+    tokens: message.inputTokens || message.outputTokens ? (message.inputTokens ?? 0) + (message.outputTokens ?? 0) : message.tokens ?? 0,
+    cost: message.costUsd ?? message.cost ?? 0,
+    latency: message.latencyMs ? message.latencyMs / 1000 : message.latency ?? 0,
+    createdAt: message.createdAt
+  };
+}
+
+function normalizeChat(chat: any, messages: Message[] = []): Chat {
+  return {
+    id: chat.id,
+    title: chat.title ?? "New Chat",
+    projectId: chat.projectId ?? "alfred-platform",
+    folderId: chat.folderId,
+    model: chat.modelName ?? chat.activeModelId ?? "Mock GPT-5",
+    messages,
+    parentId: chat.parentChatId,
+    createdAt: chat.createdAt,
+    updatedAt: chat.updatedAt
+  };
+}
+
 export const chatService = {
   listChats: async (): Promise<Chat[]> => {
+    if (isApiMode()) return (await api.get<any[]>("/chats")).map((chat) => normalizeChat(chat));
     await wait();
     return mockChats;
   },
 
   getChat: async (id: string): Promise<Chat> => {
+    if (isApiMode()) return normalizeChat(await api.get<any>(`/chats/${id}`), await chatService.getMessages(id));
     await wait();
     return mockChats.find((chat) => chat.id === id) ?? mockChats[0];
   },
 
   createChat: async (body: { title?: string; projectId?: string }): Promise<Chat> => {
+    if (isApiMode()) return normalizeChat(await api.post<any>("/chats", body));
     await wait();
     const timestamp = now();
     return {
@@ -46,11 +77,16 @@ export const chatService = {
   },
 
   getMessages: async (chatId: string): Promise<Message[]> => {
+    if (isApiMode()) return (await api.get<any[]>(`/chats/${chatId}/messages`)).map(normalizeMessage);
     await wait();
     return mockChats.find((chat) => chat.id === chatId)?.messages ?? [];
   },
 
   sendMessage: async (chatId: string, content: string, _providerType = "mock") => {
+    if (isApiMode()) {
+      const result = await api.post<any>(`/chats/${chatId}/messages`, { content, providerType: _providerType });
+      return { user: normalizeMessage(result.userMessage), assistant: normalizeMessage(result.assistantMessage) };
+    }
     await wait();
     const chat = mockChats.find((item) => item.id === chatId);
     const user: Message = {
@@ -67,6 +103,7 @@ export const chatService = {
   },
 
   branchChat: async (chatId: string, fromMessageId?: string): Promise<Chat> => {
+    if (isApiMode()) return normalizeChat(await api.post<any>(`/chats/${chatId}/branch`, { fromMessageId: fromMessageId ?? "latest" }));
     await wait();
     const source = mockChats.find((chat) => chat.id === chatId) ?? mockChats[0];
     const cutoff = fromMessageId ? source.messages.findIndex((message) => message.id === fromMessageId) + 1 : source.messages.length;
@@ -83,6 +120,7 @@ export const chatService = {
   },
 
   llmChat: async (prompt: string, options: { providerType?: string; modelName?: string; systemPrompt?: string } = {}) => {
+    if (isApiMode()) return api.post("/llm/chat", { prompt, ...options });
     await wait();
     const message = mockAssistantMessage(prompt, options.modelName ?? "Mock GPT-5");
     return {
@@ -95,6 +133,7 @@ export const chatService = {
   },
 
   llmCompare: async (_prompt: string, models: Array<{ providerType: string; modelName?: string }>) => {
+    if (isApiMode()) return api.post("/llm/compare", { prompt: _prompt, models });
     await wait();
     return models.map((model, index) => ({
       ...compareResponses[index % compareResponses.length],

@@ -12,6 +12,7 @@ import { RepositoriesModule } from "./repositories/repositories.module";
 import { SecurityModule } from "./security/security.module";
 import { AuthModule } from "./modules/auth/auth.module";
 import { ProjectsModule } from "./modules/projects/projects.module";
+import { WorkspacesModule } from "./modules/workspaces/workspaces.module";
 import { RequirementContractsModule } from "./modules/requirement-contracts/requirement-contracts.module";
 import { ProjectMemoryModule } from "./modules/project-memory/project-memory.module";
 import { ModelProvidersModule } from "./modules/model-providers/model-providers.module";
@@ -42,6 +43,7 @@ import { QueuesModule } from "./queues/queues.module";
     RepositoriesModule,
     SecurityModule,
     AuthModule,
+    WorkspacesModule,
     ProjectsModule,
     RequirementContractsModule,
     ProjectMemoryModule,

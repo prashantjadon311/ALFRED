@@ -23,9 +23,9 @@ export default function NewWorkspacePage() {
   const [themePreference, setThemePreference] = useState<"dark" | "light" | "system">("dark");
   const [makeActive, setMakeActive] = useState(true);
 
-  const create = () => {
+  const create = async () => {
     if (!name.trim()) return;
-    const id = createWorkspace({ name, description, defaultProvider, defaultModel, monthlyTokenLimit, monthlyCostLimit, themePreference });
+    const id = await createWorkspace({ name, description, defaultProvider, defaultModel, monthlyTokenLimit, monthlyCostLimit, themePreference });
     if (makeActive) setActiveWorkspace(id);
     setPageLoading(true);
     router.push(`/workspaces/${id}/settings`);

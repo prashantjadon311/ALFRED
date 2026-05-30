@@ -1,5 +1,7 @@
 import { create } from "zustand";
 import { chatFolders as mockFolders, chats as mockChats } from "@/lib/mock-data";
+import { chatService } from "@/services/chat-service";
+import { isApiMode } from "@/lib/api-client";
 import type { Chat, ChatFolder, Message } from "@/lib/types";
 
 const now = () => new Date().toISOString();
@@ -8,6 +10,8 @@ interface ChatStore {
   chats: Chat[];
   folders: ChatFolder[];
   activeChatId: string;
+  loaded: boolean;
+  loadFromApi: () => Promise<void>;
   createChat: (title?: string, folderId?: string) => string;
   createFolder: (name: string, projectId?: string) => string;
   renameFolder: (folderId: string, name: string) => void;
@@ -24,6 +28,12 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   chats: mockChats,
   folders: mockFolders,
   activeChatId: mockChats[0]?.id ?? "",
+  loaded: false,
+  loadFromApi: async () => {
+    if (!isApiMode() || get().loaded) return;
+    const chats = await Promise.all((await chatService.listChats()).map(async (chat) => ({ ...chat, messages: await chatService.getMessages(chat.id) })));
+    if (chats.length) set({ chats, activeChatId: chats[0].id, loaded: true });
+  },
   createChat: (title = "Untitled agent session", folderId) => {
     const id = `chat-${Date.now()}`;
     const timestamp = now();
@@ -38,6 +48,14 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       updatedAt: timestamp
     };
     set((state) => ({ chats: [chat, ...state.chats], activeChatId: id }));
+    if (isApiMode()) {
+      void chatService.createChat({ title, projectId: chat.projectId }).then((created) => {
+        set((state) => ({
+          chats: state.chats.map((item) => item.id === id ? { ...created, messages: [] } : item),
+          activeChatId: state.activeChatId === id ? created.id : state.activeChatId
+        }));
+      }).catch(() => undefined);
+    }
     return id;
   },
   createFolder: (name, projectId = "alfred-platform") => {

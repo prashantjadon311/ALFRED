@@ -6,6 +6,7 @@ import { useProjectStore } from "@/store/project-store";
 import { useWorkflowStore } from "@/store/workflow-store";
 import { useModelStore } from "@/store/model-store";
 import { useWorkspaceStore } from "@/store/workspace-store";
+import { useChatStore } from "@/store/chat-store";
 
 export function AppInitializer() {
   const router = useRouter();
@@ -15,6 +16,7 @@ export function AppInitializer() {
   const loadWorkflows = useWorkflowStore((s) => s.loadFromApi);
   const loadModels = useModelStore((s) => s.loadFromApi);
   const hydrateWorkspaces = useWorkspaceStore((s) => s.hydrate);
+  const loadChats = useChatStore((s) => s.loadFromApi);
 
   useEffect(() => {
     if (pathname === "/login") return;
@@ -28,7 +30,7 @@ export function AppInitializer() {
         return;
       }
       // Kick off data loads in parallel (non-blocking — stores fall back to mock on error)
-      Promise.allSettled([loadProjects(), loadWorkflows(), loadModels()]);
+      Promise.allSettled([loadProjects(), loadWorkflows(), loadModels(), loadChats()]);
     });
   }, [pathname]); // eslint-disable-line react-hooks/exhaustive-deps
 

@@ -10,6 +10,7 @@ import { SliderSetting } from "@/components/settings/SliderSetting";
 import { ToggleSetting } from "@/components/settings/ToggleSetting";
 import { useSettingsStore } from "@/store/settings-store";
 import { useUiStore } from "@/store/ui-store";
+import { settingsService } from "@/services/settings-service";
 
 export default function SettingsPage() {
   const settings = useSettingsStore();
@@ -17,7 +18,14 @@ export default function SettingsPage() {
   const setTheme = useUiStore((state) => state.setTheme);
   const [saved, setSaved] = useState(false);
 
-  const save = () => {
+  const save = async () => {
+    await settingsService.saveSettings({
+      globalTemperature: settings.globalTemperature,
+      topP: settings.topP,
+      maxTokens: settings.maxTokens,
+      maxIterations: settings.maxIterations,
+      theme
+    });
     setSaved(true);
     window.setTimeout(() => setSaved(false), 1800);
   };

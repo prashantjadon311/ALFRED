@@ -23,9 +23,15 @@ export const useModelStore = create<ModelStore>((set, get) => ({
   setSelectedModel: (model) => set({ selectedModel: model }),
 
   updateProviderConfig: (providerId, patch) =>
-    set((state) => ({ providers: state.providers.map((p) => p.id === providerId ? { ...p, ...patch } : p) })),
+    set((state) => {
+      void modelService.updateProvider(providerId, patch).catch(() => undefined);
+      return { providers: state.providers.map((p) => p.id === providerId ? { ...p, ...patch } : p) };
+    }),
   updateModelConfig: (modelId, patch) =>
-    set((state) => ({ models: state.models.map((model) => model.id === modelId ? { ...model, ...patch } : model) })),
+    set((state) => {
+      void modelService.updateModel(modelId, patch).catch(() => undefined);
+      return { models: state.models.map((model) => model.id === modelId ? { ...model, ...patch } : model) };
+    }),
 
   loadFromApi: async () => {
     if (get().loaded) return;

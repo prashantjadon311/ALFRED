@@ -9,6 +9,7 @@ import { SearchInput } from "@/components/shared/SearchInput";
 import { PromptEditorModal } from "@/components/library/PromptEditorModal";
 import { PromptLibraryGrid } from "@/components/library/PromptLibraryGrid";
 import { promptLibrary } from "@/lib/mock-data";
+import { promptService } from "@/services/prompt-service";
 import type { PromptItem } from "@/lib/types";
 
 const categories = ["All", "Product Design", "Software Architecture", "Research", "Code Review", "QA Audit", "Agent Roles", "Codex Prompts", "Favorites"];
@@ -33,7 +34,7 @@ export default function LibraryPage() {
   const [notice, setNotice] = useState("");
 
   useEffect(() => {
-    setItems(readPrompts());
+    promptService.getPromptLibrary().then(setItems).catch(() => setItems(readPrompts()));
   }, []);
 
   useEffect(() => {
@@ -83,8 +84,10 @@ export default function LibraryPage() {
             setModalOpen(true);
           }}
           onFavorite={(promptId) => {
-            setItems((current) => current.map((prompt) => (prompt.id === promptId ? { ...prompt, favorite: !prompt.favorite, updatedAt: new Date().toISOString() } : prompt)));
-            setNotice("Favorite state saved locally.");
+            promptService.toggleFavorite(promptId).then((updated) => {
+              setItems((current) => current.map((prompt) => (prompt.id === promptId ? updated : prompt)));
+              setNotice("Favorite state saved.");
+            });
             window.setTimeout(() => setNotice(""), 1500);
           }}
           onCopy={(prompt) => {
@@ -99,12 +102,13 @@ export default function LibraryPage() {
         prompt={editing}
         open={modalOpen}
         onClose={() => setModalOpen(false)}
-        onSave={(prompt) => {
+        onSave={async (prompt) => {
+          const saved = await promptService.savePrompt(prompt);
           setItems((current) => {
-            const exists = current.some((item) => item.id === prompt.id);
-            return exists ? current.map((item) => (item.id === prompt.id ? prompt : item)) : [prompt, ...current];
+            const exists = current.some((item) => item.id === saved.id);
+            return exists ? current.map((item) => (item.id === saved.id ? saved : item)) : [saved, ...current];
           });
-          setNotice(`Saved "${prompt.title}" locally.`);
+          setNotice(`Saved "${saved.title}".`);
           window.setTimeout(() => setNotice(""), 1500);
         }}
       />
