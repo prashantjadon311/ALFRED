@@ -1,4 +1,4 @@
-import { promptLibrary } from "@/lib/mock-data";
+import { promptLibrary } from "@/lib/mocks/prompts";
 import { api, isApiMode } from "@/lib/api-client";
 import type { PromptItem } from "@/lib/types";
 import { demoWait } from "./mock-latency";

@@ -1,5 +1,5 @@
 import { CheckCircle2, CircleDollarSign, LockKeyhole, MessageSquareWarning, Sparkles } from "lucide-react";
-import { activityTimeline } from "@/lib/mock-data";
+import { activityTimeline } from "@/lib/mocks/dashboard";
 
 const icons = {
   agent: Sparkles,

@@ -1,6 +1,5 @@
 "use client";
 
-import { AnimatePresence, motion } from "framer-motion";
 import { Download, MessageSquarePlus, PanelRightClose, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/shared/Button";
@@ -51,18 +50,13 @@ export function ChatWorkspace({ chatId, onOpenConversations }: { chatId: string;
       <ChatMessages chat={chat} onBranch={(messageId) => branchChat(chat.id, messageId)} onOpenArtifact={setArtifact} />
       <ChatComposer chatId={chat.id} />
 
-      <AnimatePresence>
-        {artifact ? (
-          <motion.aside
-            className="fixed bottom-0 right-0 top-0 z-[100] w-full border-l border-surface-darkBorder bg-surface-dark/95 shadow-glow backdrop-blur-xl lg:w-[45vw]"
-            role="dialog"
-            aria-modal="true"
-            aria-label="Artifact drawer"
-            initial={{ x: "100%" }}
-            animate={{ x: 0 }}
-            exit={{ x: "100%" }}
-            transition={{ type: "spring", stiffness: 220, damping: 26 }}
-          >
+      {artifact ? (
+        <aside
+          className="fixed bottom-0 right-0 top-0 z-[100] w-full border-l border-surface-darkBorder bg-surface-dark/95 shadow-glow backdrop-blur-xl transition-transform duration-200 lg:w-[45vw]"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Artifact drawer"
+        >
             <div className="absolute left-0 top-0 h-full w-1 cursor-col-resize bg-primary/35" />
             <div className="flex h-14 items-center justify-between border-b border-surface-darkBorder px-5">
               <div>
@@ -93,9 +87,8 @@ export function ChatWorkspace({ chatId, onOpenConversations }: { chatId: string;
             <Button className="absolute bottom-4 right-4" variant="secondary" icon={<PanelRightClose className="h-4 w-4" />} onClick={() => setArtifact(null)}>
               Close drawer
             </Button>
-          </motion.aside>
-        ) : null}
-      </AnimatePresence>
+        </aside>
+      ) : null}
     </section>
   );
 }

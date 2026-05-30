@@ -1,6 +1,5 @@
 "use client";
 
-import { motion } from "framer-motion";
 import { Copy, Download, GitBranch, RefreshCw } from "lucide-react";
 import dynamic from "next/dynamic";
 import ReactMarkdown from "react-markdown";
@@ -28,10 +27,7 @@ export function MessageBubble({
   const isUser = message.role === "user";
 
   return (
-    <motion.article
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.2 }}
+    <article
       className={cn("group flex gap-3", isUser && "justify-end")}
       aria-live={message.role === "assistant" ? "polite" : undefined}
     >
@@ -99,6 +95,6 @@ export function MessageBubble({
 
         <TokenFooter message={message} />
       </div>
-    </motion.article>
+    </article>
   );
 }

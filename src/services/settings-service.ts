@@ -1,4 +1,5 @@
-import { budgetRules as mockBudget, promptLibrary as mockPrompts } from "@/lib/mock-data";
+import { promptLibrary as mockPrompts } from "@/lib/mocks/prompts";
+import { budgetRules as mockBudget } from "@/lib/mocks/usage";
 import { api, isApiMode } from "@/lib/api-client";
 import type { BudgetRule, PromptItem } from "@/lib/types";
 import { demoWait } from "./mock-latency";

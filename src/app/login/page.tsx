@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { Bot, Lock } from "lucide-react";
 import { useAuthStore } from "@/store/auth-store";
 
@@ -79,6 +80,9 @@ export default function LoginPage() {
 
           <p className="mt-4 text-center text-xs text-slate-500">
             Demo: <span className="text-slate-400">demo@alfred.local / password123</span>
+          </p>
+          <p className="mt-3 text-center text-xs text-slate-500">
+            New workspace? <Link href="/signup" className="font-semibold text-violet-300 hover:text-violet-200">Create an account</Link>
           </p>
         </div>
       </div>

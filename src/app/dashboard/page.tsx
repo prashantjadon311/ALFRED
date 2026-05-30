@@ -2,6 +2,7 @@
 
 import { Bot, BrainCircuit, CircleDollarSign, Clock3, FolderKanban, Gauge, MessageSquarePlus, Settings, ShieldAlert, Workflow } from "lucide-react";
 import dynamic from "next/dynamic";
+import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/shared/Button";
 import { GlassCard } from "@/components/shared/GlassCard";
 import { StatusBadge } from "@/components/shared/StatusBadge";
@@ -9,7 +10,8 @@ import { ActivityTimeline } from "@/components/dashboard/ActivityTimeline";
 import { ProviderHealthCard } from "@/components/dashboard/ProviderHealthCard";
 import { QuickActionCard } from "@/components/dashboard/QuickActionCard";
 import { StatCard } from "@/components/dashboard/StatCard";
-import { agentNodes, providerCosts, providers, workflows } from "@/lib/mock-data";
+import { agentNodes, providerCosts, providers, workflows } from "@/lib/mocks/dashboard";
+import { dashboardService } from "@/services/dashboard-service";
 import { formatCurrency, formatTokens } from "@/lib/utils";
 
 const loop = ["User Input", "Requirement Lock", "ChatGPT", "Gemini", "Consensus", "Claude Critic", "Final Output"];
@@ -20,7 +22,21 @@ const MiniUsageChart = dynamic(() => import("@/components/dashboard/MiniUsageCha
 });
 
 export default function DashboardPage() {
-  const activeRuns = workflows.filter((workflow) => workflow.status === "Running" || workflow.status === "Waiting Approval");
+  const [summary, setSummary] = useState({
+    totalProjects: 5,
+    activeRuns: workflows.filter((workflow) => workflow.status === "Running" || workflow.status === "Waiting Approval").length,
+    waitingApprovals: 3,
+    failedRuns: 1,
+    totalTokens: 3859350,
+    totalCost: 749.55,
+    providerCosts,
+    providers,
+    workflows
+  });
+  useEffect(() => {
+    void dashboardService.getSummary().then(setSummary).catch(() => undefined);
+  }, []);
+  const activeRuns = useMemo(() => summary.workflows.filter((workflow) => workflow.status === "Running" || workflow.status === "Waiting Approval"), [summary.workflows]);
 
   return (
     <div className="space-y-6">
@@ -34,12 +50,12 @@ export default function DashboardPage() {
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-6">
-        <StatCard label="Total Projects" value="5" detail="+2 active this week" icon={<FolderKanban className="h-5 w-5" />} />
-        <StatCard label="Active Agent Runs" value="2" detail="1 waiting approval" icon={<Bot className="h-5 w-5" />} tone="success" />
-        <StatCard label="Monthly Tokens" value={formatTokens(3_859_350)} detail="71% input / 29% output" icon={<Gauge className="h-5 w-5" />} />
-        <StatCard label="Estimated Cost" value={formatCurrency(749.55)} detail="81% monthly budget" icon={<CircleDollarSign className="h-5 w-5" />} tone="warning" />
-        <StatCard label="Waiting Approvals" value="3" detail="human checkpoints" icon={<Clock3 className="h-5 w-5" />} tone="warning" />
-        <StatCard label="Failed Runs" value="1" detail="service inventory blocker" icon={<ShieldAlert className="h-5 w-5" />} tone="danger" />
+        <StatCard label="Total Projects" value={String(summary.totalProjects)} detail="+2 active this week" icon={<FolderKanban className="h-5 w-5" />} />
+        <StatCard label="Active Agent Runs" value={String(summary.activeRuns)} detail="running or queued" icon={<Bot className="h-5 w-5" />} tone="success" />
+        <StatCard label="Monthly Tokens" value={formatTokens(summary.totalTokens)} detail="input/output total" icon={<Gauge className="h-5 w-5" />} />
+        <StatCard label="Estimated Cost" value={formatCurrency(summary.totalCost)} detail="tracked workspace spend" icon={<CircleDollarSign className="h-5 w-5" />} tone="warning" />
+        <StatCard label="Waiting Approvals" value={String(summary.waitingApprovals)} detail="human checkpoints" icon={<Clock3 className="h-5 w-5" />} tone="warning" />
+        <StatCard label="Failed Runs" value={String(summary.failedRuns)} detail="service inventory blocker" icon={<ShieldAlert className="h-5 w-5" />} tone="danger" />
       </div>
 
       <div className="grid gap-6 xl:grid-cols-[1.45fr_.9fr]">
@@ -87,7 +103,7 @@ export default function DashboardPage() {
           <h2 className="text-lg font-semibold text-white">Cost by Provider</h2>
           <p className="mb-4 text-sm text-muted">Estimated spend from mocked token accounting.</p>
           <div className="space-y-4">
-            {providerCosts.map((item) => (
+            {summary.providerCosts.map((item) => (
               <div key={item.name}>
                 <div className="mb-1 flex justify-between text-sm">
                   <span className="text-slate-300">{item.name}</span>
@@ -152,7 +168,7 @@ export default function DashboardPage() {
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        {providers.slice(0, 4).map((provider) => (
+        {summary.providers.slice(0, 4).map((provider) => (
           <ProviderHealthCard key={provider.id} provider={provider} />
         ))}
       </div>

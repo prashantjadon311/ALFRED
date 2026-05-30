@@ -65,10 +65,10 @@ export function AppShell({ children }: { children: ReactNode }) {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [createChat, setCommandPaletteOpen, setFullScreenPage, setMobileSidebarOpen]);
 
-  const isLoginPage = pathname === "/login";
+  const isAuthPage = pathname === "/login" || pathname === "/signup";
   const isPlaygroundPage = pathname.startsWith("/playground");
 
-  if (isLoginPage) return <>{children}</>;
+  if (isAuthPage) return <>{children}</>;
 
   return (
     <div className="flex h-screen overflow-hidden bg-transparent text-slate-100">

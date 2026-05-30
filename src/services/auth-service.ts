@@ -20,6 +20,18 @@ function normalizeUser(user: any): AuthUser {
 }
 
 export const authService = {
+  register: async (name: string, email: string, password: string): Promise<AuthUser> => {
+    if (!isApiMode()) {
+      await demoWait(240);
+      if (!name.trim() || !email.trim() || !password.trim()) throw new Error("Enter name, email, and password.");
+      setTokens();
+      return { ...mockUser, name, email };
+    }
+    const result = await api.post<{ user: any; accessToken: string; refreshToken: string }>("/auth/register", { name, email, password });
+    setTokens(result.accessToken, result.refreshToken);
+    return normalizeUser(result.user);
+  },
+
   login: async (email: string, password: string): Promise<AuthUser> => {
     if (!isApiMode()) {
       await demoWait(240);

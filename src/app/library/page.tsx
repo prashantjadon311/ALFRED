@@ -8,7 +8,7 @@ import { GlassCard } from "@/components/shared/GlassCard";
 import { SearchInput } from "@/components/shared/SearchInput";
 import { PromptEditorModal } from "@/components/library/PromptEditorModal";
 import { PromptLibraryGrid } from "@/components/library/PromptLibraryGrid";
-import { promptLibrary } from "@/lib/mock-data";
+import { promptLibrary } from "@/lib/mocks/prompts";
 import { promptService } from "@/services/prompt-service";
 import type { PromptItem } from "@/lib/types";
 
@@ -28,13 +28,14 @@ function readPrompts() {
 export default function LibraryPage() {
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("All");
-  const [items, setItems] = useState(promptLibrary);
+  const [items, setItems] = useState<PromptItem[]>([]);
+  const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<PromptItem | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [notice, setNotice] = useState("");
 
   useEffect(() => {
-    promptService.getPromptLibrary().then(setItems).catch(() => setItems(readPrompts()));
+    promptService.getPromptLibrary().then(setItems).catch(() => setItems(readPrompts())).finally(() => setLoading(false));
   }, []);
 
   useEffect(() => {
@@ -76,7 +77,9 @@ export default function LibraryPage() {
 
       {notice ? <p className="mb-4 rounded-card border border-success/25 bg-success/10 px-4 py-3 text-sm text-success">{notice}</p> : null}
 
-      {prompts.length ? (
+      {loading ? (
+        <EmptyState title="Loading prompt library" description="Preparing reusable A.L.F.R.E.D. prompts." />
+      ) : prompts.length ? (
         <PromptLibraryGrid
           prompts={prompts}
           onEdit={(prompt) => {

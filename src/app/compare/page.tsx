@@ -5,7 +5,7 @@ import { useMemo, useState } from "react";
 import { Button } from "@/components/shared/Button";
 import { GlassCard } from "@/components/shared/GlassCard";
 import { CompareGrid } from "@/components/compare/CompareGrid";
-import { compareResponses } from "@/lib/mock-data";
+import { compareResponses } from "@/lib/mocks/compare";
 import { chatService } from "@/services/chat-service";
 import { artifactService } from "@/services/artifact-service";
 

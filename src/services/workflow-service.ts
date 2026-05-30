@@ -1,4 +1,4 @@
-import { agentNodes as mockNodes, workflows as mockWorkflows } from "@/lib/mock-data";
+import { agentNodes as mockNodes, workflows as mockWorkflows } from "@/lib/mocks/workflows";
 import { api, isApiMode } from "@/lib/api-client";
 import type { WorkflowRun, WorkflowStatus } from "@/lib/types";
 import { demoWait } from "./mock-latency";

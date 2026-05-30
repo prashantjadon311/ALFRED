@@ -1,0 +1,12 @@
+import type { PromptItem } from "@/lib/types";
+
+export const promptLibrary: PromptItem[] = [
+  { id: "prompt-001", title: "Agentic Product Designer", category: "Product Design", description: "Designs AI-native workflows with requirement lock and review loops.", prompt: "Act as a senior AI product designer. Map the user motive into workflow-first UX.", favorite: true, updatedAt: "2026-05-21T08:00:00Z" },
+  { id: "prompt-002", title: "Claude Critic Strict Audit", category: "Agent Roles", description: "Finds blockers, drift, hidden risks, and missing acceptance checks.", prompt: "You are the final critic. Be strict, concrete, and requirement-bound.", favorite: true, updatedAt: "2026-05-20T18:00:00Z" },
+  { id: "prompt-003", title: "Nest Integration Boundary", category: "Software Architecture", description: "Keeps frontend services replaceable by future Nest.js APIs.", prompt: "Identify API boundaries, DTOs, loading states, and failure states without backend calls.", favorite: false, updatedAt: "2026-05-18T10:00:00Z" },
+  { id: "prompt-004", title: "Research Claim Synthesizer", category: "Research", description: "Separates evidence, inference, contradiction, and unknowns.", prompt: "Synthesize claims into evidence-backed sections and flag unsupported conclusions.", favorite: false, updatedAt: "2026-05-16T10:00:00Z" },
+  { id: "prompt-005", title: "Code Review Risk Lens", category: "Code Review", description: "Reviews code for bugs, regressions, and missing tests.", prompt: "Prioritize findings by severity with exact files and actionable fixes.", favorite: true, updatedAt: "2026-05-14T10:00:00Z" },
+  { id: "prompt-006", title: "QA Audit Planner", category: "QA Audit", description: "Builds acceptance matrices for multi-agent workflow outputs.", prompt: "Turn the requirement contract into manual and automated acceptance checks.", favorite: false, updatedAt: "2026-05-12T10:00:00Z" },
+  { id: "prompt-007", title: "Codex Patch Prompt", category: "Codex Prompts", description: "Scopes coding-agent tasks by file ownership and verification.", prompt: "Implement the following scoped change. Preserve unrelated edits. Verify with typecheck and build.", favorite: true, updatedAt: "2026-05-11T10:00:00Z" },
+  { id: "prompt-008", title: "Workflow Resolver", category: "Agent Roles", description: "Converts critic findings into concrete resolution steps.", prompt: "Resolve each issue using minimal code and product changes. Keep the original motive locked.", favorite: false, updatedAt: "2026-05-09T10:00:00Z" }
+];

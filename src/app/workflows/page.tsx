@@ -1,17 +1,21 @@
 "use client";
 
 import { Play, Workflow } from "lucide-react";
+import { useEffect } from "react";
 import { AppLink } from "@/components/shared/AppLink";
 import { Button } from "@/components/shared/Button";
 import { GlassCard } from "@/components/shared/GlassCard";
 import { StatusBadge } from "@/components/shared/StatusBadge";
-import { projects } from "@/lib/mock-data";
 import { formatCurrency, formatTokens } from "@/lib/utils";
 import { useWorkflowStore } from "@/store/workflow-store";
 
 export default function WorkflowsPage() {
   const workflows = useWorkflowStore((state) => state.workflows);
+  const loadWorkflows = useWorkflowStore((state) => state.loadFromApi);
   const runWorkflow = useWorkflowStore((state) => state.runWorkflowMock);
+  useEffect(() => {
+    void loadWorkflows();
+  }, [loadWorkflows]);
 
   return (
     <div>
@@ -26,7 +30,7 @@ export default function WorkflowsPage() {
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <p className="font-semibold text-white">{workflow.name}</p>
-                  <p className="mt-1 text-xs text-muted">{projects.find((project) => project.id === workflow.projectId)?.name}</p>
+                  <p className="mt-1 text-xs text-muted">{workflow.projectId}</p>
                 </div>
                 <StatusBadge status={workflow.status} />
               </div>
@@ -61,7 +65,7 @@ export default function WorkflowsPage() {
               {workflows.map((workflow) => (
                 <tr key={workflow.id} className="hover:bg-white/5">
                   <td className="px-3 py-4 font-semibold text-white">{workflow.name}</td>
-                  <td className="px-3 py-4 text-slate-300">{projects.find((project) => project.id === workflow.projectId)?.name}</td>
+                  <td className="px-3 py-4 text-slate-300">{workflow.projectId}</td>
                   <td className="px-3 py-4"><StatusBadge status={workflow.status} /></td>
                   <td className="px-3 py-4 text-slate-300">{workflow.iteration}/{workflow.maxIterations}</td>
                   <td className="px-3 py-4 text-slate-300">GPT-5, Claude, Gemini</td>

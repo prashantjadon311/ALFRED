@@ -2,18 +2,23 @@
 
 import { Coins, Gauge, TrendingUp } from "lucide-react";
 import dynamic from "next/dynamic";
+import { useEffect, useMemo, useState } from "react";
 import { GlassCard } from "@/components/shared/GlassCard";
 import { MetricCard } from "@/components/shared/MetricCard";
 import { BudgetAlert } from "@/components/usage/BudgetAlert";
 import { BudgetProgress } from "@/components/usage/BudgetProgress";
-import { budgetRules, models, projectCosts, providerCosts, usageSeries, workflows } from "@/lib/mock-data";
+import { budgetRules as defaultBudgetRules, projectCosts as defaultProjectCosts, providerCosts as defaultProviderCosts, usageSeries as defaultUsageSeries } from "@/lib/mocks/usage";
+import { usageService } from "@/services/usage-service";
+import type { BudgetRule, UsagePoint } from "@/lib/types";
 import { formatCurrency, formatTokens } from "@/lib/utils";
 
-const totalInput = usageSeries.reduce((sum, point) => sum + point.input, 0);
-const totalOutput = usageSeries.reduce((sum, point) => sum + point.output, 0);
-const totalCost = usageSeries.reduce((sum, point) => sum + point.cost, 0);
-const workflowCosts = workflows.map((workflow) => ({ name: workflow.name.slice(0, 16), value: workflow.totalCost }));
-const modelTokens = models.slice(0, 6).map((model, index) => ({ name: model.name, value: 42000 + index * 28000 }));
+const workflowCosts = [
+  { name: "Command Center", value: 38.74 },
+  { name: "Provider Audit", value: 19.33 },
+  { name: "VAPT Flow", value: 17.95 },
+  { name: "Research", value: 12.01 }
+];
+const modelTokens = ["GPT-5", "Claude Opus", "Gemini", "Local LLM"].map((name, index) => ({ name, value: 42000 + index * 28000 }));
 const UsageChart = dynamic(() => import("@/components/usage/UsageChart").then((mod) => mod.UsageChart), {
   ssr: false,
   loading: () => <div className="h-[320px] animate-pulse rounded-card border border-surface-darkBorder bg-surface-darkElevated/50" />
@@ -24,13 +29,34 @@ const CostBreakdownChart = dynamic(() => import("@/components/usage/CostBreakdow
 });
 
 export default function UsagePage() {
+  const [usageSeries, setUsageSeries] = useState<UsagePoint[]>(defaultUsageSeries);
+  const [providerCosts, setProviderCosts] = useState(defaultProviderCosts);
+  const [projectCosts, setProjectCosts] = useState(defaultProjectCosts);
+  const [budgetRules, setBudgetRules] = useState<BudgetRule[]>(defaultBudgetRules);
+
+  useEffect(() => {
+    void Promise.allSettled([
+      usageService.getUsageSeries().then(setUsageSeries),
+      usageService.getProviderCosts().then((items) => setProviderCosts(items.map((item: any) => ({ name: item.name ?? item.provider ?? "unknown", value: item.value ?? item.cost ?? 0 })))),
+      usageService.getProjectCosts().then((items) => setProjectCosts(items.map((item: any) => ({ name: item.name ?? item.project ?? "unknown", value: item.value ?? item.cost ?? 0 })))),
+      usageService.getBudgetRules().then(setBudgetRules)
+    ]);
+  }, []);
+
+  const totals = useMemo(() => {
+    const input = usageSeries.reduce((sum, point) => sum + point.input, 0);
+    const output = usageSeries.reduce((sum, point) => sum + point.output, 0);
+    const cost = usageSeries.reduce((sum, point) => sum + point.cost, 0);
+    return { input, output, cost };
+  }, [usageSeries]);
+
   return (
     <div>
       <div className="grid gap-4 md:grid-cols-4">
-        <MetricCard label="Total tokens used" value={formatTokens(totalInput + totalOutput)} detail="Seven-day mocked total" icon={<Gauge className="h-4 w-4" />} />
-        <MetricCard label="Input tokens" value={formatTokens(totalInput)} detail="Prompt and context volume" />
-        <MetricCard label="Output tokens" value={formatTokens(totalOutput)} detail="Generated model responses" />
-        <MetricCard label="Estimated cost" value={formatCurrency(totalCost)} detail="Frontend-only estimate" icon={<Coins className="h-4 w-4" />} />
+        <MetricCard label="Total tokens used" value={formatTokens(totals.input + totals.output)} detail="Seven-day total" icon={<Gauge className="h-4 w-4" />} />
+        <MetricCard label="Input tokens" value={formatTokens(totals.input)} detail="Prompt and context volume" />
+        <MetricCard label="Output tokens" value={formatTokens(totals.output)} detail="Generated model responses" />
+        <MetricCard label="Estimated cost" value={formatCurrency(totals.cost)} detail="Estimated spend" icon={<Coins className="h-4 w-4" />} />
       </div>
 
       <div className="mt-6 grid gap-6 xl:grid-cols-[1.2fr_.8fr]">
@@ -39,7 +65,7 @@ export default function UsagePage() {
             <TrendingUp className="h-5 w-5 text-primary-soft" /> Daily Usage
           </h2>
           <p className="mb-4 text-sm text-muted">Input and output token volume by day.</p>
-          <UsageChart />
+          <UsageChart data={usageSeries} />
         </GlassCard>
         <GlassCard>
           <h2 className="text-lg font-semibold text-white">Budget Alerts</h2>

@@ -17,6 +17,7 @@
     "seed": "npm --prefix backend run seed",
     "indexes": "npm --prefix backend run indexes",
     "test": "npm run typecheck && npm run test:frontend",
+    "test:browser": "playwright test",
     "test:frontend": "node scripts/frontend-checks.mjs",
     "test:backend": "npm --prefix backend run test",
     "test:e2e": "npm run dev:infra && npm --prefix backend run test:e2e",
@@ -40,6 +41,7 @@
     "zustand": "^5.0.2"
   },
   "devDependencies": {
+    "@playwright/test": "^1.60.0",
     "@types/node": "^22.10.5",
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",

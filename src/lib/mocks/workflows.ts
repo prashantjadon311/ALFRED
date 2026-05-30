@@ -1,0 +1,18 @@
+import type { AgentNode, WorkflowRun } from "@/lib/types";
+
+export const workflows: WorkflowRun[] = [
+  { id: "wf-active-001", projectId: "alfred-platform", name: "Command Center Prototype Loop", status: "Running", currentNodeId: "gemini-architect", iteration: 3, maxIterations: 6, totalTokens: 214900, totalCost: 38.74, startedAt: "2026-05-21T14:18:00Z", duration: "41m 12s", claudeVerdict: "No blocker yet. Watch right panel density and graph node legibility." },
+  { id: "wf-002", projectId: "alfred-platform", name: "Provider Governance Audit", status: "Completed", currentNodeId: "export-artifact", iteration: 4, maxIterations: 5, totalTokens: 121500, totalCost: 19.33, startedAt: "2026-05-20T12:10:00Z", duration: "1h 08m", claudeVerdict: "Approved with recommendation to surface budget stop conditions earlier." },
+  { id: "wf-003", projectId: "vapt-flow-builder", name: "Finding-to-Action Flow Design", status: "Waiting Approval", currentNodeId: "human-approval", iteration: 2, maxIterations: 5, totalTokens: 98240, totalCost: 17.95, startedAt: "2026-05-20T16:05:00Z", duration: "52m 21s", claudeVerdict: "Approval required because remediation ownership is ambiguous." },
+  { id: "wf-004", projectId: "ai-research-assistant", name: "Research Claim Synthesis", status: "Paused", currentNodeId: "budget-manager", iteration: 1, maxIterations: 4, totalTokens: 76880, totalCost: 12.01, startedAt: "2026-05-18T10:40:00Z", duration: "31m 44s", claudeVerdict: "Paused before model expansion to prevent duplicate literature summaries." },
+  { id: "wf-005", projectId: "legacy-migration-planner", name: "Migration Risk Planner", status: "Failed", currentNodeId: "claude-critic", iteration: 5, maxIterations: 5, totalTokens: 188100, totalCost: 35.62, startedAt: "2026-05-15T09:25:00Z", duration: "2h 16m", claudeVerdict: "Failed due to unresolved blocker: missing service inventory." }
+];
+
+export const agentNodes: AgentNode[] = [
+  { id: "requirement-lock", title: "Requirement Lock", provider: "A.L.F.R.E.D.", model: "Contract Engine", role: "Creates a signed execution contract and drift guardrails.", status: "Success", inputTokens: 5200, outputTokens: 900, cost: 0, latency: 0.3, systemPrompt: "Preserve the user's original motive." },
+  { id: "chatgpt-designer", title: "ChatGPT Designer", provider: "OpenAI", model: "GPT-5", role: "Designs product flows and module boundaries.", status: "Success", inputTokens: 9200, outputTokens: 4300, cost: 0.11, latency: 4.2, systemPrompt: "Create product design grounded in the locked requirement." },
+  { id: "gemini-architect", title: "Gemini Architect", provider: "Google Gemini", model: "Gemini 2.5 Pro", role: "Checks architecture and integration boundaries.", status: "Running", inputTokens: 8100, outputTokens: 2200, cost: 0.08, latency: 4.9, systemPrompt: "Validate technical architecture." },
+  { id: "consensus-builder", title: "Consensus Builder", provider: "A.L.F.R.E.D.", model: "Consensus", role: "Merges design and architecture proposals.", status: "Pending", inputTokens: 0, outputTokens: 0, cost: 0, latency: 0, systemPrompt: "Merge model outputs." },
+  { id: "claude-critic", title: "Claude Critic", provider: "Anthropic Claude", model: "Claude Opus", role: "Audits drift, blockers, and acceptance gaps.", status: "Pending", inputTokens: 0, outputTokens: 0, cost: 0, latency: 0, systemPrompt: "Be strict and requirement-bound." },
+  { id: "final-output", title: "Final Output", provider: "A.L.F.R.E.D.", model: "Artifact Engine", role: "Exports final reviewed output.", status: "Pending", inputTokens: 0, outputTokens: 0, cost: 0, latency: 0, systemPrompt: "Generate final artifacts." }
+];

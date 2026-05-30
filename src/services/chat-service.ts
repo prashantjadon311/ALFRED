@@ -1,4 +1,5 @@
-import { chats as mockChats, compareResponses } from "@/lib/mock-data";
+import { chats as mockChats } from "@/lib/mock-data";
+import { compareResponses } from "@/lib/mocks/compare";
 import { api, isApiMode } from "@/lib/api-client";
 import type { Chat, Message } from "@/lib/types";
 import { demoWait } from "./mock-latency";

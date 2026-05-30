@@ -12,14 +12,14 @@ export function AppInitializer() {
   const initialized = useRef(false);
 
   useEffect(() => {
-    if (pathname === "/login") return;
+    if (pathname === "/login" || pathname === "/signup") return;
     if (initialized.current) return;
     initialized.current = true;
     hydrateWorkspaces();
 
     loadMe().then(() => {
       const currentUser = useAuthStore.getState().user;
-      if (!currentUser && pathname !== "/login") {
+      if (!currentUser && pathname !== "/login" && pathname !== "/signup") {
         router.replace("/login");
       }
     });

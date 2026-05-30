@@ -1,13 +1,14 @@
 "use client";
 
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { usageSeries } from "@/lib/mock-data";
+import { usageSeries as defaultUsageSeries } from "@/lib/mocks/usage";
+import type { UsagePoint } from "@/lib/types";
 
-export function MiniUsageChart({ type = "area" }: { type?: "area" | "bar" }) {
+export function MiniUsageChart({ type = "area", data = defaultUsageSeries }: { type?: "area" | "bar"; data?: UsagePoint[] }) {
   if (type === "bar") {
     return (
       <ResponsiveContainer width="100%" height={230}>
-        <BarChart data={usageSeries}>
+        <BarChart data={data}>
           <CartesianGrid stroke="var(--chart-grid)" vertical={false} />
           <XAxis dataKey="date" stroke="var(--chart-axis)" tickLine={false} axisLine={false} fontSize={12} />
           <YAxis stroke="var(--chart-axis)" tickLine={false} axisLine={false} fontSize={12} />
@@ -20,7 +21,7 @@ export function MiniUsageChart({ type = "area" }: { type?: "area" | "bar" }) {
 
   return (
     <ResponsiveContainer width="100%" height={230}>
-      <AreaChart data={usageSeries}>
+      <AreaChart data={data}>
         <defs>
           <linearGradient id="tokenGradient" x1="0" y1="0" x2="0" y2="1">
             <stop offset="5%" stopColor="var(--chart-primary)" stopOpacity={0.45} />

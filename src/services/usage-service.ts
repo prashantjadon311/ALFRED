@@ -1,4 +1,4 @@
-import { budgetRules as mockBudget, projectCosts as mockProjectCosts, providerCosts as mockProviderCosts, usageSeries as mockSeries } from "@/lib/mock-data";
+import { budgetRules as mockBudget, projectCosts as mockProjectCosts, providerCosts as mockProviderCosts, usageSeries as mockSeries } from "@/lib/mocks/usage";
 import { api, isApiMode } from "@/lib/api-client";
 import { demoWait } from "./mock-latency";
 
@@ -12,13 +12,13 @@ export const usageService = {
   },
 
   getProviderCosts: async () => {
-    if (isApiMode()) return (await api.get<any[]>("/usage/by-provider")).map((row) => ({ provider: row._id ?? "unknown", cost: row.costUsd ?? 0, tokens: row.tokens ?? 0 }));
+    if (isApiMode()) return (await api.get<any[]>("/usage/by-provider")).map((row) => ({ name: row._id ?? "unknown", value: row.costUsd ?? 0, tokens: row.tokens ?? 0 }));
     await wait();
     return mockProviderCosts;
   },
 
   getProjectCosts: async () => {
-    if (isApiMode()) return (await api.get<any[]>("/usage/by-project")).map((row) => ({ project: row._id ?? "unknown", cost: row.costUsd ?? 0, tokens: row.tokens ?? 0 }));
+    if (isApiMode()) return (await api.get<any[]>("/usage/by-project")).map((row) => ({ name: row._id ?? "unknown", value: row.costUsd ?? 0, tokens: row.tokens ?? 0 }));
     await wait();
     return mockProjectCosts;
   },

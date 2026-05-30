@@ -5,7 +5,10 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "A.L.F.R.E.D. Command Center",
-  description: "Agentic Logic Framework for Real-time Execution and Deployment"
+  description: "Agentic Logic Framework for Real-time Execution and Deployment",
+  icons: {
+    icon: "/favicon.svg"
+  }
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

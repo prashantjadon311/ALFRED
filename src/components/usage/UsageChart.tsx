@@ -1,12 +1,13 @@
 "use client";
 
 import { Area, AreaChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { usageSeries } from "@/lib/mock-data";
+import { usageSeries as defaultUsageSeries } from "@/lib/mocks/usage";
+import type { UsagePoint } from "@/lib/types";
 
-export function UsageChart() {
+export function UsageChart({ data = defaultUsageSeries }: { data?: UsagePoint[] }) {
   return (
     <ResponsiveContainer width="100%" height={320}>
-      <AreaChart data={usageSeries}>
+      <AreaChart data={data}>
         <defs>
           <linearGradient id="inputUsage" x1="0" y1="0" x2="0" y2="1">
             <stop offset="5%" stopColor="var(--chart-primary)" stopOpacity={0.45} />
