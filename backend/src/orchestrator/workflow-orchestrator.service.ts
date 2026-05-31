@@ -56,17 +56,17 @@ export class WorkflowOrchestratorService {
     private readonly bus: RealtimeEventBus
   ) {}
 
-  async startRun(userId: ObjectId, workflowId: ObjectId, projectId: ObjectId) {
+  async startRun(userId: ObjectId, workspaceId: ObjectId, workflowId: ObjectId, projectId: ObjectId) {
     const [workflow, project, requirement] = await Promise.all([
-      this.workflows.findById(workflowId, userId),
-      this.projects.findById(projectId, userId),
+      this.workflows.findByIdForWorkspace(workflowId, userId, workspaceId),
+      this.projects.findByIdForWorkspace(projectId, userId, workspaceId),
       this.requirements.findCurrent(userId, projectId)
     ]);
     if (!workflow || !project || !requirement) throw new NotFoundException("Workflow, project, or requirement contract not found");
     const workflowDsl = this.validator.validate(workflow.workflowDsl);
     const budgetState = this.budget.buildSnapshot(workflow.maxTokens, 0, workflow.maxCostUsd, 0);
     const run = await this.runs.create({
-      userId, projectId, workflowId, status: "queued", iteration: 1, maxIterations: workflow.maxIterations,
+      userId, workspaceId, projectId, workflowId, status: "queued", iteration: 1, maxIterations: workflow.maxIterations,
       totalInputTokens: 0, totalOutputTokens: 0, totalCostUsd: 0, budgetState, requirementContractSnapshot: requirement,
       workflowDslSnapshot: workflowDsl, acceptedDecisions: [], rejectedIdeas: [], openIssues: [], version: 1, createdAt: new Date()
     } as any);
@@ -122,8 +122,8 @@ export class WorkflowOrchestratorService {
         const final = await this.executeNode(userId, runId, { ...run, iteration } as WorkflowRunDoc, dsl, "final_output", requirement, previousOutputs);
         const finalArtifact = this.parser.parse<any>(final.output ?? "{}");
         const artifactData = finalArtifact.ok ? finalArtifact.value : { title: "Final Output", type: "markdown", content: final.output ?? "", metadata: {} };
-        const artifact = await this.artifacts.create({ userId, projectId: run.projectId, workflowRunId: runId, title: artifactData.title, type: artifactData.type, content: artifactData.content, metadata: artifactData.metadata, createdAt: new Date() } as any);
-        const version = await this.versions.create({ userId, artifactId: artifact!._id!, workflowRunId: runId, version: 1, title: artifactData.title, content: artifactData.content, createdAt: new Date() } as any);
+        const artifact = await this.artifacts.create({ userId, workspaceId: run.workspaceId, projectId: run.projectId, workflowRunId: runId, title: artifactData.title, type: artifactData.type, content: artifactData.content, metadata: artifactData.metadata, createdAt: new Date() } as any);
+        const version = await this.versions.create({ userId, workspaceId: run.workspaceId, artifactId: artifact!._id!, workflowRunId: runId, version: 1, title: artifactData.title, content: artifactData.content, createdAt: new Date() } as any);
         await this.artifacts.updateById(artifact!._id!, userId, { currentVersionId: version!._id } as any);
         await this.emit(userId, runId, "artifact.created", { projectId: run.projectId, data: { artifactId: artifact!._id!.toHexString(), type: artifactData.type } });
         await this.emit(userId, runId, "artifact.version.created", { projectId: run.projectId, data: { artifactId: artifact!._id!.toHexString(), versionId: version!._id!.toHexString(), version: 1 } });
@@ -132,8 +132,8 @@ export class WorkflowOrchestratorService {
           const codex = await this.executeNode(userId, runId, { ...run, iteration } as WorkflowRunDoc, dsl, "codex_prompt_generator", requirement, previousOutputs);
           const bundle = this.parser.parse<any>(codex.output ?? "{}");
           const data = bundle.ok ? bundle.value : { title: "Codex Prompt Bundle", type: "codex_prompt_bundle", content: codex.output ?? "", metadata: {} };
-          const codexArtifact = await this.artifacts.create({ userId, projectId: run.projectId, workflowRunId: runId, title: data.title, type: "codex_prompt_bundle", content: data.content, metadata: data.metadata, createdAt: new Date() } as any);
-          const codexVersion = await this.versions.create({ userId, artifactId: codexArtifact!._id!, workflowRunId: runId, version: 1, title: data.title, content: data.content, sourceExecutionId: codex._id, createdAt: new Date() } as any);
+          const codexArtifact = await this.artifacts.create({ userId, workspaceId: run.workspaceId, projectId: run.projectId, workflowRunId: runId, title: data.title, type: "codex_prompt_bundle", content: data.content, metadata: data.metadata, createdAt: new Date() } as any);
+          const codexVersion = await this.versions.create({ userId, workspaceId: run.workspaceId, artifactId: codexArtifact!._id!, workflowRunId: runId, version: 1, title: data.title, content: data.content, sourceExecutionId: codex._id, createdAt: new Date() } as any);
           await this.artifacts.updateById(codexArtifact!._id!, userId, { currentVersionId: codexVersion!._id } as any);
           await this.emit(userId, runId, "artifact.created", { projectId: run.projectId, data: { artifactId: codexArtifact!._id!.toHexString(), type: "codex_prompt_bundle" } });
           await this.emit(userId, runId, "artifact.version.created", { projectId: run.projectId, data: { artifactId: codexArtifact!._id!.toHexString(), versionId: codexVersion!._id!.toHexString(), version: 1 } });
@@ -217,7 +217,7 @@ export class WorkflowOrchestratorService {
       createdAt: started
     } as any);
     previousOutputs.push({ nodeKey, output: output.content });
-    await this.usage.record({ userId, projectId: run.projectId, workflowRunId: runId, providerType: output.providerType, modelName: output.modelName, inputTokens: output.inputTokens, outputTokens: output.outputTokens, costUsd: output.costUsd, latencyMs: output.latencyMs, source: "workflow" });
+    await this.usage.record({ userId, workspaceId: run.workspaceId, projectId: run.projectId, workflowRunId: runId, providerType: output.providerType, modelName: output.modelName, inputTokens: output.inputTokens, outputTokens: output.outputTokens, costUsd: output.costUsd, latencyMs: output.latencyMs, source: "workflow" });
     const updatedRun = await this.runs.findById(runId, userId);
     if (updatedRun) {
       const updatedBudget = this.buildBudgetSnapshot(updatedRun);

@@ -7,11 +7,12 @@ import { GeminiProvider } from "../../llm/providers/gemini.provider";
 import { OllamaProvider } from "../../llm/providers/ollama.provider";
 import { CustomOpenAiCompatibleProvider } from "../../llm/providers/custom-openai.provider";
 import { UsageModule } from "../usage/usage.module";
+import { WorkspacesModule } from "../workspaces/workspaces.module";
 
 import { LlmGatewayController } from "./llm-gateway.controller";
 
 @Module({
-  imports: [UsageModule],
+  imports: [UsageModule, WorkspacesModule],
   providers: [LlmRouterService, MockLlmProvider, OpenAiProvider, AnthropicProvider, GeminiProvider, OllamaProvider, CustomOpenAiCompatibleProvider],
   controllers: [LlmGatewayController],
   exports: [LlmRouterService, MockLlmProvider]

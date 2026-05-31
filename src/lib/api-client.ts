@@ -7,6 +7,7 @@ type RequestOptions = { method?: string; body?: unknown; timeoutMs?: number };
 const DEFAULT_TIMEOUT_MS = 8000;
 const inflightGets = new Map<string, Promise<unknown>>();
 const getCache = new Map<string, { expiresAt: number; value: unknown }>();
+const WORKSPACE_STORAGE_KEY = "alfred_workspaces_state";
 
 export function isApiMode() {
   return process.env.NEXT_PUBLIC_API_MODE === "api";
@@ -19,6 +20,18 @@ function baseUrl() {
 export function getToken(): string | null {
   if (typeof window === "undefined") return null;
   return localStorage.getItem("alfred_access_token");
+}
+
+function getActiveWorkspaceId(): string | null {
+  if (!isApiMode() || typeof window === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(WORKSPACE_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { activeWorkspaceId?: unknown };
+    return typeof parsed.activeWorkspaceId === "string" && /^[a-f\d]{24}$/i.test(parsed.activeWorkspaceId) ? parsed.activeWorkspaceId : null;
+  } catch {
+    return null;
+  }
 }
 
 export function setTokens(access = MOCK_ACCESS_TOKEN, refresh = MOCK_REFRESH_TOKEN) {
@@ -47,9 +60,10 @@ function clearGetCache() {
 
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const token = getToken();
+  const workspaceId = getActiveWorkspaceId();
   const hasBody = options.body !== undefined;
   const method = options.method ?? "GET";
-  const cacheKey = `${token ?? "anon"}:${path}`;
+  const cacheKey = `${token ?? "anon"}:${workspaceId ?? "no-workspace"}:${path}`;
   const ttlMs = method === "GET" ? cacheTtlForPath(path) : 0;
   if (ttlMs > 0) {
     const cached = getCache.get(cacheKey);
@@ -63,6 +77,7 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
     method,
     headers: {
       ...(hasBody ? { "Content-Type": "application/json" } : {}),
+      ...(workspaceId ? { "X-Workspace-Id": workspaceId } : {}),
       ...(token ? { Authorization: `Bearer ${token}` } : {})
     },
     body: hasBody ? JSON.stringify(options.body) : undefined,

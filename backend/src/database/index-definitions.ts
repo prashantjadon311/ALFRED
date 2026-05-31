@@ -5,7 +5,9 @@ export async function ensureMongoIndexes(db: Db) {
     db.collection("users").createIndex({ email: 1 }, { unique: true }),
 
     db.collection("projects").createIndex({ userId: 1 }),
+    db.collection("projects").createIndex({ userId: 1, workspaceId: 1 }),
     db.collection("projects").createIndex({ userId: 1, status: 1 }),
+    db.collection("projects").createIndex({ userId: 1, workspaceId: 1, status: 1 }),
     db.collection("projects").createIndex({ userId: 1, updatedAt: -1 }),
 
     db.collection("workspaces").createIndex({ userId: 1 }),
@@ -24,24 +26,29 @@ export async function ensureMongoIndexes(db: Db) {
     db.collection("ai_models").createIndex({ userId: 1, providerType: 1, name: 1 }),
 
     db.collection("chats").createIndex({ userId: 1 }),
+    db.collection("chats").createIndex({ userId: 1, workspaceId: 1 }),
     db.collection("chats").createIndex({ userId: 1, projectId: 1 }),
     db.collection("chats").createIndex({ userId: 1, updatedAt: -1 }),
     db.collection("chats").createIndex({ parentChatId: 1 }),
 
     db.collection("messages").createIndex({ chatId: 1, createdAt: 1 }),
+    db.collection("messages").createIndex({ userId: 1, workspaceId: 1, chatId: 1, createdAt: 1 }),
     db.collection("messages").createIndex({ userId: 1, createdAt: -1 }),
     db.collection("messages").createIndex({ projectId: 1, createdAt: -1 }),
 
     db.collection("prompt_library").createIndex({ userId: 1 }),
+    db.collection("prompt_library").createIndex({ userId: 1, workspaceId: 1 }),
     db.collection("prompt_library").createIndex({ userId: 1, category: 1 }),
     db.collection("prompt_library").createIndex({ userId: 1, favorite: 1 }),
     db.collection("prompt_library").createIndex({ title: "text", content: "text", tags: "text" }),
 
     db.collection("workflows").createIndex({ userId: 1 }),
+    db.collection("workflows").createIndex({ userId: 1, workspaceId: 1 }),
     db.collection("workflows").createIndex({ userId: 1, projectId: 1 }),
     db.collection("workflows").createIndex({ userId: 1, status: 1 }),
 
     db.collection("workflow_runs").createIndex({ userId: 1 }),
+    db.collection("workflow_runs").createIndex({ userId: 1, workspaceId: 1 }),
     db.collection("workflow_runs").createIndex({ userId: 1, projectId: 1 }),
     db.collection("workflow_runs").createIndex({ userId: 1, status: 1 }),
     db.collection("workflow_runs").createIndex({ workflowId: 1 }),
@@ -74,12 +81,14 @@ export async function ensureMongoIndexes(db: Db) {
     db.collection("workflow_events").createIndex({ eventType: 1 }),
 
     db.collection("usage_events").createIndex({ userId: 1, createdAt: -1 }),
+    db.collection("usage_events").createIndex({ userId: 1, workspaceId: 1, createdAt: -1 }),
     db.collection("usage_events").createIndex({ projectId: 1, createdAt: -1 }),
     db.collection("usage_events").createIndex({ workflowRunId: 1 }),
     db.collection("usage_events").createIndex({ providerType: 1 }),
     db.collection("usage_events").createIndex({ modelName: 1 }),
 
     db.collection("artifacts").createIndex({ userId: 1 }),
+    db.collection("artifacts").createIndex({ userId: 1, workspaceId: 1 }),
     db.collection("artifacts").createIndex({ projectId: 1 }),
     db.collection("artifacts").createIndex({ workflowRunId: 1 }),
     db.collection("artifacts").createIndex({ type: 1 }),

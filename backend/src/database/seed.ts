@@ -41,6 +41,8 @@ async function seed() {
     }
   }
   await db.collection("workspaces").updateMany({ userId, name: { $ne: "Prashant / Pro Workspace" } }, { $set: { active: false, updatedAt: new Date() } });
+  const activeWorkspace = await db.collection("workspaces").findOne({ userId, active: true, archived: { $ne: true } });
+  const workspaceId = activeWorkspace!._id as ObjectId;
   console.log("Seeded workspaces");
 
   // Providers
@@ -95,7 +97,7 @@ async function seed() {
   for (const pt of promptTemplates) {
     const existing = await db.collection("prompt_library").findOne({ userId, title: pt.title });
     if (!existing) {
-      await db.collection("prompt_library").insertOne({ userId, ...pt, favorite: false, version: 1, createdAt: new Date(), updatedAt: new Date() });
+      await db.collection("prompt_library").insertOne({ userId, workspaceId, ...pt, favorite: false, version: 1, createdAt: new Date(), updatedAt: new Date() });
     }
   }
   console.log("Seeded prompt library");
@@ -112,7 +114,7 @@ async function seed() {
   for (const proj of projectNames) {
     const existing = await db.collection("projects").findOne({ userId, name: proj.name });
     if (existing) { projectIds.push(existing._id); continue; }
-    const res = await db.collection("projects").insertOne({ userId, ...proj, progress: proj.status === "running" ? 45 : proj.status === "planning" ? 10 : 0, tokenUsage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 }, cost: { totalUsd: 0 }, metadata: {}, createdAt: new Date(), updatedAt: new Date() });
+    const res = await db.collection("projects").insertOne({ userId, workspaceId, ...proj, progress: proj.status === "running" ? 45 : proj.status === "planning" ? 10 : 0, tokenUsage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 }, cost: { totalUsd: 0 }, metadata: {}, createdAt: new Date(), updatedAt: new Date() });
     projectIds.push(res.insertedId);
   }
   console.log("Seeded projects");
@@ -151,7 +153,7 @@ async function seed() {
   let workflowId: ObjectId;
   const existingWf = await db.collection("workflows").findOne({ userId, name: defaultWorkflowDsl.name });
   if (!existingWf) {
-    const wfRes = await db.collection("workflows").insertOne({ userId, projectId: mainProjectId, name: defaultWorkflowDsl.name, description: "Default multi-agent product design loop with requirement lock, ChatGPT designer, Gemini architect, consensus builder, Claude critic, issue resolver, final output, and Codex prompt generator.", workflowDsl: defaultWorkflowDsl, maxIterations: 3, maxTokens: 100000, maxCostUsd: 5, status: "active", version: 1, createdAt: new Date(), updatedAt: new Date() });
+    const wfRes = await db.collection("workflows").insertOne({ userId, workspaceId, projectId: mainProjectId, name: defaultWorkflowDsl.name, description: "Default multi-agent product design loop with requirement lock, ChatGPT designer, Gemini architect, consensus builder, Claude critic, issue resolver, final output, and Codex prompt generator.", workflowDsl: defaultWorkflowDsl, maxIterations: 3, maxTokens: 100000, maxCostUsd: 5, status: "active", version: 1, createdAt: new Date(), updatedAt: new Date() });
     workflowId = wfRes.insertedId;
     await db.collection("projects").updateOne({ _id: mainProjectId }, { $set: { activeWorkflowId: workflowId } });
   } else {
@@ -164,7 +166,7 @@ async function seed() {
   let runId: ObjectId;
   if (!existingRun) {
     const runRes = await db.collection("workflow_runs").insertOne({
-      userId, projectId: mainProjectId, workflowId, status: "completed", currentNodeKey: "codex_prompt_generator", currentEdgeKey: "e8", iteration: 2, maxIterations: 3,
+      userId, workspaceId, projectId: mainProjectId, workflowId, status: "completed", currentNodeKey: "codex_prompt_generator", currentEdgeKey: "e8", iteration: 2, maxIterations: 3,
       totalInputTokens: 14200, totalOutputTokens: 8600, totalCostUsd: 0.0796,
       budgetState: { maxTokens: 100000, usedTokens: 22800, remainingTokens: 77200, maxCostUsd: 5, usedCostUsd: 0.0796, remainingCostUsd: 4.9204, mode: "normal", warnings: [] },
       claudeVerdict: "Issue resolver added explicit governance checks. Approved.",
@@ -224,11 +226,11 @@ async function seed() {
   // Sample artifact
   const existingArtifact = await db.collection("artifacts").findOne({ userId, workflowRunId: runId, type: "software_plan" });
   if (!existingArtifact) {
-    const artRes = await db.collection("artifacts").insertOne({ userId, projectId: mainProjectId, workflowRunId: runId, title: "A.L.F.R.E.D. Reviewed Execution Plan", type: "software_plan", content: "## Final Plan\n\nA requirement-locked, budget-aware agentic orchestration backend with:\n\n- Mock LLM router\n- BullMQ workflow engine\n- Claude critique loop (2 iterations)\n- SSE graph replay\n- Artifact generation\n- Token/cost governance\n\n### Architecture\n\nNestJS + Fastify → MongoDB (native) → BullMQ → MockLLM → SSE\n\n### Approved by Claude Critic at iteration 2.", metadata: { approvedByCritic: true, iteration: 2 }, createdAt: new Date(), updatedAt: new Date() });
-    const vRes = await db.collection("artifact_versions").insertOne({ userId, artifactId: artRes.insertedId, workflowRunId: runId, version: 1, title: "A.L.F.R.E.D. Reviewed Execution Plan", content: "## Final Plan\n\nAgentic orchestration backend — approved.", createdAt: new Date() });
+    const artRes = await db.collection("artifacts").insertOne({ userId, workspaceId, projectId: mainProjectId, workflowRunId: runId, title: "A.L.F.R.E.D. Reviewed Execution Plan", type: "software_plan", content: "## Final Plan\n\nA requirement-locked, budget-aware agentic orchestration backend with:\n\n- Mock LLM router\n- BullMQ workflow engine\n- Claude critique loop (2 iterations)\n- SSE graph replay\n- Artifact generation\n- Token/cost governance\n\n### Architecture\n\nNestJS + Fastify → MongoDB (native) → BullMQ → MockLLM → SSE\n\n### Approved by Claude Critic at iteration 2.", metadata: { approvedByCritic: true, iteration: 2 }, createdAt: new Date(), updatedAt: new Date() });
+    const vRes = await db.collection("artifact_versions").insertOne({ userId, workspaceId, artifactId: artRes.insertedId, workflowRunId: runId, version: 1, title: "A.L.F.R.E.D. Reviewed Execution Plan", content: "## Final Plan\n\nAgentic orchestration backend — approved.", createdAt: new Date() });
     await db.collection("artifacts").updateOne({ _id: artRes.insertedId }, { $set: { currentVersionId: vRes.insertedId } });
 
-    await db.collection("artifacts").insertOne({ userId, projectId: mainProjectId, workflowRunId: runId, title: "A.L.F.R.E.D. Codex Prompt Bundle", type: "codex_prompt_bundle", content: "## Phase 1\nBuild auth, projects, requirement contracts.\n\n## Phase 2\nImplement BullMQ workflow engine and mock LLM router.\n\n## Phase 3\nAdd SSE graph replay and governance tests.\n\n**Acceptance**: No raw keys, all events persisted, e2e test passes.", metadata: { generatedBy: "mock-codex", phases: 3 }, createdAt: new Date(), updatedAt: new Date() });
+    await db.collection("artifacts").insertOne({ userId, workspaceId, projectId: mainProjectId, workflowRunId: runId, title: "A.L.F.R.E.D. Codex Prompt Bundle", type: "codex_prompt_bundle", content: "## Phase 1\nBuild auth, projects, requirement contracts.\n\n## Phase 2\nImplement BullMQ workflow engine and mock LLM router.\n\n## Phase 3\nAdd SSE graph replay and governance tests.\n\n**Acceptance**: No raw keys, all events persisted, e2e test passes.", metadata: { generatedBy: "mock-codex", phases: 3 }, createdAt: new Date(), updatedAt: new Date() });
   }
   console.log("Seeded artifacts");
 
@@ -239,7 +241,7 @@ async function seed() {
     for (const agent of agents) {
       const input = 1200 + Math.floor(Math.random() * 1000);
       const output = 800 + Math.floor(Math.random() * 600);
-      await db.collection("usage_events").insertOne({ userId, projectId: mainProjectId, workflowRunId: runId, providerType: "mock", modelName: agent.includes("claude") ? "Mock Claude Opus" : agent.includes("gemini") ? "Mock Gemini" : "Mock GPT-5", inputTokens: input, outputTokens: output, totalTokens: input + output, costUsd: Number(((input * 0.000002) + (output * 0.000006)).toFixed(6)), latencyMs: 100 + Math.floor(Math.random() * 200), source: "workflow", createdAt: new Date() });
+      await db.collection("usage_events").insertOne({ userId, workspaceId, projectId: mainProjectId, workflowRunId: runId, providerType: "mock", modelName: agent.includes("claude") ? "Mock Claude Opus" : agent.includes("gemini") ? "Mock Gemini" : "Mock GPT-5", inputTokens: input, outputTokens: output, totalTokens: input + output, costUsd: Number(((input * 0.000002) + (output * 0.000006)).toFixed(6)), latencyMs: 100 + Math.floor(Math.random() * 200), source: "workflow", createdAt: new Date() });
     }
   }
   console.log("Seeded usage events");
@@ -247,13 +249,18 @@ async function seed() {
   // Sample chat
   const existingChat = await db.collection("chats").findOne({ userId, projectId: mainProjectId });
   if (!existingChat) {
-    const chatRes = await db.collection("chats").insertOne({ userId, projectId: mainProjectId, title: "What should A.L.F.R.E.D. do first?", mode: "single", settings: { temperature: 0.7, topP: 1, maxTokens: 4096 }, tokenUsage: { inputTokens: 320, outputTokens: 480, totalTokens: 800 }, cost: { totalUsd: 0.00352 }, createdAt: new Date(), updatedAt: new Date() });
+    const chatRes = await db.collection("chats").insertOne({ userId, workspaceId, projectId: mainProjectId, title: "What should A.L.F.R.E.D. do first?", mode: "single", settings: { temperature: 0.7, topP: 1, maxTokens: 4096 }, tokenUsage: { inputTokens: 320, outputTokens: 480, totalTokens: 800 }, cost: { totalUsd: 0.00352 }, createdAt: new Date(), updatedAt: new Date() });
     await db.collection("messages").insertMany([
-      { userId, chatId: chatRes.insertedId, projectId: mainProjectId, role: "user", content: "What should the A.L.F.R.E.D. backend do first?", createdAt: new Date(Date.now() - 30000) },
-      { userId, chatId: chatRes.insertedId, projectId: mainProjectId, role: "assistant", content: "The first working vertical slice should demonstrate the complete flow: register → create project → lock requirement contract → run default workflow → agent loop executes via BullMQ → Claude critic reviews → issue resolver fixes → final artifact is created → SSE streams all events live.", modelName: "Mock GPT-5", providerType: "mock", inputTokens: 320, outputTokens: 480, costUsd: 0.00352, latencyMs: 145, createdAt: new Date() }
+      { userId, workspaceId, chatId: chatRes.insertedId, projectId: mainProjectId, role: "user", content: "What should the A.L.F.R.E.D. backend do first?", createdAt: new Date(Date.now() - 30000) },
+      { userId, workspaceId, chatId: chatRes.insertedId, projectId: mainProjectId, role: "assistant", content: "The first working vertical slice should demonstrate the complete flow: register → create project → lock requirement contract → run default workflow → agent loop executes via BullMQ → Claude critic reviews → issue resolver fixes → final artifact is created → SSE streams all events live.", modelName: "Mock GPT-5", providerType: "mock", inputTokens: 320, outputTokens: 480, costUsd: 0.00352, latencyMs: 145, createdAt: new Date() }
     ]);
   }
   console.log("Seeded chats");
+
+  for (const collectionName of ["projects", "chats", "messages", "workflows", "workflow_runs", "artifacts", "usage_events", "prompt_library"]) {
+    await db.collection(collectionName).updateMany({ userId, workspaceId: { $exists: false } }, { $set: { workspaceId, updatedAt: new Date() } });
+  }
+  console.log("Backfilled demo workspaceId fields");
 
   await client.close();
   console.log("\n✅ Seed complete. Login: demo@alfred.local / password123");

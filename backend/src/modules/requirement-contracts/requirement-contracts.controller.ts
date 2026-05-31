@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Headers, Param, Patch, Post, UseGuards } from "@nestjs/common";
 import { z } from "zod";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
@@ -6,6 +6,7 @@ import { zodPipe } from "../../common/pipes/zod-validation.pipe";
 import { RequestUser } from "../../common/types/request-user";
 import { toObjectId } from "../../common/utils/object-id";
 import { ok } from "../../contracts/api-response.types";
+import { WorkspaceScopeService } from "../workspaces/workspace-scope.service";
 import { RequirementContractsService } from "./requirement-contracts.service";
 
 const contractSchema = z.object({
@@ -27,25 +28,29 @@ const driftSchema = z.object({ output: z.string().min(1) });
 @UseGuards(JwtAuthGuard)
 @Controller()
 export class RequirementContractsController {
-  constructor(private readonly service: RequirementContractsService) {}
+  constructor(private readonly service: RequirementContractsService, private readonly scope: WorkspaceScopeService) {}
 
   @Post("projects/:projectId/requirement-contracts")
-  async create(@CurrentUser() user: RequestUser, @Param("projectId") projectId: string, @Body(zodPipe(contractSchema)) body: z.infer<typeof contractSchema>) {
-    return ok(await this.service.create(toObjectId(user.userId, "userId"), toObjectId(projectId, "projectId"), body));
+  async create(@CurrentUser() user: RequestUser, @Headers("x-workspace-id") workspaceHeader: string | undefined, @Param("projectId") projectId: string, @Body(zodPipe(contractSchema)) body: z.infer<typeof contractSchema>) {
+    const userId = toObjectId(user.userId, "userId");
+    return ok(await this.service.create(userId, await this.scope.resolve(userId, workspaceHeader), toObjectId(projectId, "projectId"), body));
   }
 
   @Get("projects/:projectId/requirement-contracts/current")
-  async current(@CurrentUser() user: RequestUser, @Param("projectId") projectId: string) {
-    return ok(await this.service.current(toObjectId(user.userId, "userId"), toObjectId(projectId, "projectId")));
+  async current(@CurrentUser() user: RequestUser, @Headers("x-workspace-id") workspaceHeader: string | undefined, @Param("projectId") projectId: string) {
+    const userId = toObjectId(user.userId, "userId");
+    return ok(await this.service.current(userId, await this.scope.resolve(userId, workspaceHeader), toObjectId(projectId, "projectId")));
   }
 
   @Patch("requirement-contracts/:id")
-  async update(@CurrentUser() user: RequestUser, @Param("id") id: string, @Body(zodPipe(updateSchema)) body: z.infer<typeof updateSchema>) {
-    return ok(await this.service.update(toObjectId(user.userId, "userId"), toObjectId(id), body));
+  async update(@CurrentUser() user: RequestUser, @Headers("x-workspace-id") workspaceHeader: string | undefined, @Param("id") id: string, @Body(zodPipe(updateSchema)) body: z.infer<typeof updateSchema>) {
+    const userId = toObjectId(user.userId, "userId");
+    return ok(await this.service.update(userId, await this.scope.resolve(userId, workspaceHeader), toObjectId(id), body));
   }
 
   @Post("requirement-contracts/:id/check-drift")
-  async checkDrift(@CurrentUser() user: RequestUser, @Param("id") id: string, @Body(zodPipe(driftSchema)) body: z.infer<typeof driftSchema>) {
-    return ok(await this.service.checkDrift(toObjectId(user.userId, "userId"), toObjectId(id), body.output));
+  async checkDrift(@CurrentUser() user: RequestUser, @Headers("x-workspace-id") workspaceHeader: string | undefined, @Param("id") id: string, @Body(zodPipe(driftSchema)) body: z.infer<typeof driftSchema>) {
+    const userId = toObjectId(user.userId, "userId");
+    return ok(await this.service.checkDrift(userId, await this.scope.resolve(userId, workspaceHeader), toObjectId(id), body.output));
   }
 }

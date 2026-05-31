@@ -23,14 +23,14 @@ export class DashboardService {
     private readonly usage: UsageService
   ) {}
 
-  async summary(userId: ObjectId) {
-    const cacheKey = userId.toHexString();
+  async summary(userId: ObjectId, workspaceId: ObjectId) {
+    const cacheKey = `${userId.toHexString()}:${workspaceId.toHexString()}`;
     const cached = this.summaryCache.get(cacheKey);
     if (cached && cached.expiresAt > Date.now()) return cached.value;
     const [projectStats, workflowStats, usageSummary, providerHealth] = await Promise.all([
-      this.getProjectStats(userId),
-      this.getWorkflowStats(userId),
-      this.usage.summary(userId),
+      this.getProjectStats(userId, workspaceId),
+      this.getWorkflowStats(userId, workspaceId),
+      this.usage.summary(userId, workspaceId),
       this.getProviderHealth(userId)
     ]);
     const value: DashboardSummary = { projectStats, workflowStats, usageSummary, providerHealth };
@@ -38,9 +38,9 @@ export class DashboardService {
     return value;
   }
 
-  private async getProjectStats(userId: ObjectId) {
+  private async getProjectStats(userId: ObjectId, workspaceId: ObjectId) {
     const rows = await this.projects.collection().aggregate<{ _id: string; count: number }>([
-      { $match: { userId } },
+      { $match: { userId, workspaceId } },
       { $group: { _id: "$status", count: { $sum: 1 } } }
     ]).toArray();
     const byStatus = Object.fromEntries(rows.map((row) => [row._id ?? "unknown", row.count]));
@@ -48,9 +48,9 @@ export class DashboardService {
     return { total, byStatus };
   }
 
-  private async getWorkflowStats(userId: ObjectId) {
+  private async getWorkflowStats(userId: ObjectId, workspaceId: ObjectId) {
     const rows = await this.runs.collection().aggregate<{ _id: string; count: number }>([
-      { $match: { userId } },
+      { $match: { userId, workspaceId } },
       { $group: { _id: "$status", count: { $sum: 1 } } }
     ]).toArray();
     const byStatus = Object.fromEntries(rows.map((row) => [row._id ?? "unknown", row.count]));

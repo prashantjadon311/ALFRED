@@ -17,45 +17,45 @@ export class WorkflowRunsService {
     private readonly bus: RealtimeEventBus
   ) {}
 
-  async list(userId: ObjectId, page: number, limit: number, projectId?: string) {
+  async list(userId: ObjectId, workspaceId: ObjectId, page: number, limit: number, projectId?: string) {
     const filter: Record<string, unknown> = {};
     if (projectId) filter.projectId = new ObjectId(projectId);
-    const result = await this.runs.listByUser(userId, filter as any, { skip: (page - 1) * limit, limit });
+    const result = await this.runs.listByUserAndWorkspace(userId, workspaceId, filter as any, { skip: (page - 1) * limit, limit });
     return { items: this.runs.serializeMany(result.items), total: result.total };
   }
 
-  async get(userId: ObjectId, id: ObjectId) {
-    const run = await this.runs.findById(id, userId);
+  async get(userId: ObjectId, workspaceId: ObjectId, id: ObjectId) {
+    const run = await this.runs.findByIdForWorkspace(id, userId, workspaceId);
     if (!run) throw new NotFoundException("Workflow run not found");
     return this.runs.serialize(run);
   }
 
-  async pause(userId: ObjectId, id: ObjectId) {
-    const run = await this.runs.findById(id, userId);
+  async pause(userId: ObjectId, workspaceId: ObjectId, id: ObjectId) {
+    const run = await this.runs.findByIdForWorkspace(id, userId, workspaceId);
     if (!run) throw new NotFoundException("Workflow run not found");
     await this.runs.updateStatus(id, userId, "paused");
     await this.emit(userId, id, "run.paused", run.projectId, { status: "paused" });
     return { status: "paused" };
   }
 
-  async resume(userId: ObjectId, id: ObjectId) {
-    const run = await this.runs.findById(id, userId);
+  async resume(userId: ObjectId, workspaceId: ObjectId, id: ObjectId) {
+    const run = await this.runs.findByIdForWorkspace(id, userId, workspaceId);
     if (!run) throw new NotFoundException("Workflow run not found");
     await this.runs.updateStatus(id, userId, "running");
     await this.emit(userId, id, "run.resumed", run.projectId, { status: "running" });
     return { status: "resumed" };
   }
 
-  async stop(userId: ObjectId, id: ObjectId) {
-    const run = await this.runs.findById(id, userId);
+  async stop(userId: ObjectId, workspaceId: ObjectId, id: ObjectId) {
+    const run = await this.runs.findByIdForWorkspace(id, userId, workspaceId);
     if (!run) throw new NotFoundException("Workflow run not found");
     await this.runs.updateStatus(id, userId, "failed", { stopReason: "user_stopped" });
     await this.emit(userId, id, "run.stopped", run.projectId, { status: "stopped" });
     return { status: "stopped" };
   }
 
-  async getGraphState(userId: ObjectId, id: ObjectId) {
-    const run = await this.runs.findById(id, userId);
+  async getGraphState(userId: ObjectId, workspaceId: ObjectId, id: ObjectId) {
+    const run = await this.runs.findByIdForWorkspace(id, userId, workspaceId);
     if (!run) throw new NotFoundException("Workflow run not found");
     const recentEvents = await this.events.collection().find({ workflowRunId: id }).sort({ createdAt: -1 }).limit(200).toArray();
     const nodeStatuses: Record<string, unknown> = {};
@@ -75,20 +75,20 @@ export class WorkflowRunsService {
     };
   }
 
-  async getLogs(userId: ObjectId, id: ObjectId, limit: number) {
-    await this.assertAccess(id, userId);
+  async getLogs(userId: ObjectId, workspaceId: ObjectId, id: ObjectId, limit: number) {
+    await this.assertAccess(id, userId, workspaceId);
     const evts = await this.events.collection().find({ workflowRunId: id }).sort({ createdAt: 1 }).limit(limit).toArray();
     return this.events.serializeMany(evts);
   }
 
-  async getIssues(userId: ObjectId, id: ObjectId) {
-    await this.assertAccess(id, userId);
+  async getIssues(userId: ObjectId, workspaceId: ObjectId, id: ObjectId) {
+    await this.assertAccess(id, userId, workspaceId);
     return this.issues.serializeMany(await this.issues.listByRun(id, userId));
   }
 
-  async getArtifacts(userId: ObjectId, id: ObjectId) {
-    await this.assertAccess(id, userId);
-    const docs = await this.artifacts.collection().find({ workflowRunId: id, userId }).toArray();
+  async getArtifacts(userId: ObjectId, workspaceId: ObjectId, id: ObjectId) {
+    await this.assertAccess(id, userId, workspaceId);
+    const docs = await this.artifacts.collection().find({ workflowRunId: id, userId, workspaceId }).toArray();
     return this.artifacts.serializeMany(docs);
   }
 
@@ -96,14 +96,14 @@ export class WorkflowRunsService {
     return this.bus.stream(runId.toHexString());
   }
 
-  async getRecentEvents(userId: ObjectId, runId: ObjectId, limit = 50) {
-    const run = await this.assertAccess(runId, userId);
+  async getRecentEvents(userId: ObjectId, workspaceId: ObjectId, runId: ObjectId, limit = 50) {
+    const run = await this.assertAccess(runId, userId, workspaceId);
     const docs = await this.events.collection().find({ userId, workflowRunId: runId }).sort({ createdAt: -1 }).limit(limit).toArray();
     return docs.reverse().map((event) => this.toPayload(event, run.projectId));
   }
 
-  private async assertAccess(id: ObjectId, userId: ObjectId) {
-    const run = await this.runs.findById(id, userId);
+  private async assertAccess(id: ObjectId, userId: ObjectId, workspaceId: ObjectId) {
+    const run = await this.runs.findByIdForWorkspace(id, userId, workspaceId);
     if (!run) throw new NotFoundException("Workflow run not found");
     return run;
   }

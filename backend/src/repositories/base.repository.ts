@@ -5,10 +5,13 @@ import { serializeDoc, serializeDocs } from "../common/utils/object-id";
 export interface OwnedDoc {
   _id?: ObjectId;
   userId?: ObjectId;
+  workspaceId?: ObjectId;
   createdAt?: Date;
   updatedAt?: Date;
   [key: string]: unknown;
 }
+
+type ListOptions = { skip?: number; limit?: number; sort?: Record<string, 1 | -1>; projection?: Record<string, 0 | 1> };
 
 export class BaseRepository<T extends OwnedDoc> {
   constructor(protected readonly db: DatabaseService, protected readonly collectionName: string) {}
@@ -30,7 +33,7 @@ export class BaseRepository<T extends OwnedDoc> {
     return this.collection().findOne(filter, { projection });
   }
 
-  async listByUser(userId: ObjectId, filter: Filter<T> = {} as Filter<T>, options: { skip?: number; limit?: number; sort?: Record<string, 1 | -1>; projection?: Record<string, 0 | 1> } = {}) {
+  async listByUser(userId: ObjectId, filter: Filter<T> = {} as Filter<T>, options: ListOptions = {}) {
     const finalFilter = { ...filter, userId } as Filter<T>;
     const cursor = this.collection().find(finalFilter, { projection: options.projection }).sort(options.sort ?? { updatedAt: -1 });
     if (options.skip) cursor.skip(options.skip);
@@ -39,13 +42,31 @@ export class BaseRepository<T extends OwnedDoc> {
     return { items, total };
   }
 
+  async listByUserAndWorkspace(userId: ObjectId, workspaceId: ObjectId, filter: Filter<T> = {} as Filter<T>, options: ListOptions = {}) {
+    return this.listByUser(userId, { ...filter, workspaceId } as Filter<T>, options);
+  }
+
+  async findByIdForWorkspace(id: ObjectId, userId: ObjectId, workspaceId: ObjectId, projection?: Record<string, 0 | 1>) {
+    return this.collection().findOne({ _id: id, userId, workspaceId } as Filter<T>, { projection });
+  }
+
   async updateById(id: ObjectId, userId: ObjectId, patch: Partial<T>) {
     await this.collection().updateOne({ _id: id, userId } as Filter<T>, { $set: { ...patch, updatedAt: new Date() } } as UpdateFilter<T>);
     return this.findById(id, userId);
   }
 
+  async updateByIdForWorkspace(id: ObjectId, userId: ObjectId, workspaceId: ObjectId, patch: Partial<T>) {
+    await this.collection().updateOne({ _id: id, userId, workspaceId } as Filter<T>, { $set: { ...patch, updatedAt: new Date() } } as UpdateFilter<T>);
+    return this.findByIdForWorkspace(id, userId, workspaceId);
+  }
+
   async deleteById(id: ObjectId, userId: ObjectId) {
     const result = await this.collection().deleteOne({ _id: id, userId } as Filter<T>);
+    return result.deletedCount === 1;
+  }
+
+  async deleteByIdForWorkspace(id: ObjectId, userId: ObjectId, workspaceId: ObjectId) {
+    const result = await this.collection().deleteOne({ _id: id, userId, workspaceId } as Filter<T>);
     return result.deletedCount === 1;
   }
 

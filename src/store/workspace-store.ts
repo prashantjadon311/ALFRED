@@ -74,6 +74,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     if (!isApiMode()) return;
     void workspaceService.getWorkspaces().then((workspaces) => {
       const activeWorkspaceId = workspaces.find((workspace) => workspace.active)?.id ?? workspaces[0]?.id ?? "";
+      writeStoredState({ workspaces, activeWorkspaceId });
       set({ workspaces, activeWorkspaceId, hydrated: true });
     }).catch(() => undefined);
   },

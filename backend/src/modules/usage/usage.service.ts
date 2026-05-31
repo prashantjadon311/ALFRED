@@ -16,24 +16,24 @@ export class UsageService {
     private readonly chats: ChatsRepository
   ) {}
 
-  async record(input: { userId: ObjectId; projectId?: ObjectId; workflowRunId?: ObjectId; chatId?: ObjectId; providerType: string; modelName: string; inputTokens: number; outputTokens: number; costUsd: number; latencyMs: number; source: string }) {
-    this.invalidateUser(input.userId);
+  async record(input: { userId: ObjectId; workspaceId: ObjectId; projectId?: ObjectId; workflowRunId?: ObjectId; chatId?: ObjectId; providerType: string; modelName: string; inputTokens: number; outputTokens: number; costUsd: number; latencyMs: number; source: string }) {
+    this.invalidateUser(input.userId, input.workspaceId);
     const event = await this.usage.create({ ...input, totalTokens: input.inputTokens + input.outputTokens, createdAt: new Date() } as any);
-    if (input.projectId) await this.projects.incrementUsage(input.projectId, input.userId, input.inputTokens, input.outputTokens, input.costUsd);
-    if (input.workflowRunId) await this.runs.incrementUsage(input.workflowRunId, input.userId, input.inputTokens, input.outputTokens, input.costUsd);
-    if (input.chatId) await this.chats.incrementUsage(input.chatId, input.userId, input.inputTokens, input.outputTokens, input.costUsd);
+    if (input.projectId) await this.projects.incrementUsage(input.projectId, input.userId, input.inputTokens, input.outputTokens, input.costUsd, input.workspaceId);
+    if (input.workflowRunId) await this.runs.incrementUsage(input.workflowRunId, input.userId, input.inputTokens, input.outputTokens, input.costUsd, input.workspaceId);
+    if (input.chatId) await this.chats.incrementUsage(input.chatId, input.userId, input.inputTokens, input.outputTokens, input.costUsd, input.workspaceId);
     return event;
   }
 
-  private invalidateUser(userId: ObjectId) {
-    const prefix = `${userId.toHexString()}:`;
+  private invalidateUser(userId: ObjectId, workspaceId: ObjectId) {
+    const prefix = `${userId.toHexString()}:${workspaceId.toHexString()}:`;
     for (const key of this.cache.keys()) {
       if (key.startsWith(prefix)) this.cache.delete(key);
     }
   }
 
-  private async cached<T>(userId: ObjectId, scope: string, load: () => Promise<T>, ttlMs = 10_000): Promise<T> {
-    const key = `${userId.toHexString()}:${scope}`;
+  private async cached<T>(userId: ObjectId, workspaceId: ObjectId, scope: string, load: () => Promise<T>, ttlMs = 10_000): Promise<T> {
+    const key = `${userId.toHexString()}:${workspaceId.toHexString()}:${scope}`;
     const cached = this.cache.get(key);
     if (cached && cached.expiresAt > Date.now()) return cached.value as T;
     const value = await load();
@@ -41,24 +41,24 @@ export class UsageService {
     return value;
   }
 
-  async summary(userId: ObjectId) {
-    return this.cached(userId, "summary", async () => {
+  async summary(userId: ObjectId, workspaceId: ObjectId) {
+    return this.cached(userId, workspaceId, "summary", async () => {
       const rows = await this.usage.collection().aggregate([
-        { $match: { userId } },
+        { $match: { userId, workspaceId } },
         { $group: { _id: null, inputTokens: { $sum: "$inputTokens" }, outputTokens: { $sum: "$outputTokens" }, totalTokens: { $sum: "$totalTokens" }, costUsd: { $sum: "$costUsd" } } }
       ]).toArray();
       return rows[0] ?? { inputTokens: 0, outputTokens: 0, totalTokens: 0, costUsd: 0 };
     });
   }
 
-  byProvider(userId: ObjectId) { return this.groupBy(userId, "$providerType"); }
-  byModel(userId: ObjectId) { return this.groupBy(userId, "$modelName"); }
-  byProject(userId: ObjectId) { return this.groupBy(userId, "$projectId"); }
+  byProvider(userId: ObjectId, workspaceId: ObjectId) { return this.groupBy(userId, workspaceId, "$providerType"); }
+  byModel(userId: ObjectId, workspaceId: ObjectId) { return this.groupBy(userId, workspaceId, "$modelName"); }
+  byProject(userId: ObjectId, workspaceId: ObjectId) { return this.groupBy(userId, workspaceId, "$projectId"); }
 
-  daily(userId: ObjectId) {
-    return this.cached(userId, "daily", () =>
+  daily(userId: ObjectId, workspaceId: ObjectId) {
+    return this.cached(userId, workspaceId, "daily", () =>
       this.usage.collection().aggregate([
-        { $match: { userId } },
+        { $match: { userId, workspaceId } },
         {
           $group: {
             _id: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } },
@@ -76,8 +76,8 @@ export class UsageService {
     );
   }
 
-  async budgetAlerts(userId: ObjectId) {
-    const summary = await this.summary(userId);
+  async budgetAlerts(userId: ObjectId, workspaceId: ObjectId) {
+    const summary = await this.summary(userId, workspaceId);
     const monthlyBudgetUsd = 100;
     const pct = monthlyBudgetUsd ? Number(summary.costUsd ?? 0) / monthlyBudgetUsd : 0;
     const alerts = [];
@@ -87,10 +87,10 @@ export class UsageService {
     return alerts;
   }
 
-  private groupBy(userId: ObjectId, field: string) {
-    return this.cached(userId, `group:${field}`, () =>
+  private groupBy(userId: ObjectId, workspaceId: ObjectId, field: string) {
+    return this.cached(userId, workspaceId, `group:${field}`, () =>
       this.usage.collection().aggregate([
-        { $match: { userId } },
+        { $match: { userId, workspaceId } },
         { $group: { _id: field, tokens: { $sum: "$totalTokens" }, costUsd: { $sum: "$costUsd" } } },
         { $sort: { costUsd: -1 } },
         { $limit: 50 }

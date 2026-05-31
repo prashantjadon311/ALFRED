@@ -15,8 +15,8 @@ export class RequirementContractsService {
     private readonly drift: RequirementDriftService
   ) {}
 
-  async create(userId: ObjectId, projectId: ObjectId, input: any) {
-    const project = await this.projects.findById(projectId, userId);
+  async create(userId: ObjectId, workspaceId: ObjectId, projectId: ObjectId, input: any) {
+    const project = await this.projects.findByIdForWorkspace(projectId, userId, workspaceId);
     if (!project) throw new NotFoundException("Project not found");
     const version = (await this.contracts.collection().countDocuments({ userId, projectId })) + 1;
     const contract = await this.contracts.create({
@@ -37,26 +37,34 @@ export class RequirementContractsService {
       version,
       createdAt: new Date()
     } as any);
-    await this.projects.updateById(projectId, userId, { activeRequirementContractId: contract!._id } as any);
+    await this.projects.updateByIdForWorkspace(projectId, userId, workspaceId, { activeRequirementContractId: contract!._id } as any);
     await this.audit.audit({ userId, entityType: "requirement_contract", entityId: contract!._id!.toHexString(), action: "requirement_contract.created", metadata: { projectId } });
     return serializeDoc(contract);
   }
 
-  async current(userId: ObjectId, projectId: ObjectId) {
+  async current(userId: ObjectId, workspaceId: ObjectId, projectId: ObjectId) {
+    const project = await this.projects.findByIdForWorkspace(projectId, userId, workspaceId);
+    if (!project) throw new NotFoundException("Project not found");
     const contract = await this.contracts.findCurrent(userId, projectId);
     if (!contract) throw new NotFoundException("Requirement contract not found");
     return serializeDoc(contract);
   }
 
-  async update(userId: ObjectId, id: ObjectId, patch: any) {
+  async update(userId: ObjectId, workspaceId: ObjectId, id: ObjectId, patch: any) {
+    const existing = await this.contracts.findById(id, userId);
+    if (!existing) throw new NotFoundException("Requirement contract not found");
+    const project = await this.projects.findByIdForWorkspace(existing.projectId, userId, workspaceId);
+    if (!project) throw new NotFoundException("Requirement contract not found");
     const updated = await this.contracts.patchContract(id, userId, patch);
     if (!updated) throw new NotFoundException("Requirement contract not found");
     return serializeDoc(updated);
   }
 
-  async checkDrift(userId: ObjectId, id: ObjectId, output: string) {
+  async checkDrift(userId: ObjectId, workspaceId: ObjectId, id: ObjectId, output: string) {
     const contract = await this.contracts.findById(id, userId);
     if (!contract) throw new NotFoundException("Requirement contract not found");
+    const project = await this.projects.findByIdForWorkspace(contract.projectId, userId, workspaceId);
+    if (!project) throw new NotFoundException("Requirement contract not found");
     const result = this.drift.check({ ...contract, output });
     await this.contracts.updateById(id, userId, {
       driftStatus: result.driftDetected ? "drift_detected" : "stable",

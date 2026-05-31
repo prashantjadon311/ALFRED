@@ -5,16 +5,24 @@ import * as bcrypt from "bcryptjs";
 import { ObjectId } from "mongodb";
 import { UsersRepository } from "../../repositories/users.repository";
 import { AuditLogsRepository } from "../../repositories/audit-logs.repository";
+import { UserProvisioningService } from "./user-provisioning.service";
 
 @Injectable()
 export class AuthService {
-  constructor(private readonly users: UsersRepository, private readonly jwt: JwtService, private readonly config: ConfigService, private readonly audit: AuditLogsRepository) {}
+  constructor(
+    private readonly users: UsersRepository,
+    private readonly jwt: JwtService,
+    private readonly config: ConfigService,
+    private readonly audit: AuditLogsRepository,
+    private readonly provisioning: UserProvisioningService
+  ) {}
 
   async register(input: { name: string; email: string; password: string }) {
     const email = input.email.toLowerCase();
     if (await this.users.findByEmail(email)) throw new ConflictException("Email already registered");
     const passwordHash = await bcrypt.hash(input.password, 12);
     const user = await this.users.create({ name: input.name, email, passwordHash, role: "user", status: "active", createdAt: new Date() } as any);
+    await this.provisioning.provision(user!._id!);
     await this.audit.audit({ userId: user!._id, entityType: "user", entityId: user!._id!.toHexString(), action: "register" });
     return this.issueTokens(user!);
   }

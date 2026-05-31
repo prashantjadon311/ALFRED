@@ -23,14 +23,15 @@ export class ProjectsService {
     private readonly requirements: RequirementContractsRepository
   ) {}
 
-  async list(userId: ObjectId, page = 1, limit = 20, status?: string) {
-    const result = await this.projects.listByUser(userId, status ? ({ status } as any) : ({} as any), { skip: (page - 1) * limit, limit });
+  async list(userId: ObjectId, workspaceId: ObjectId, page = 1, limit = 20, status?: string) {
+    const result = await this.projects.listByUserAndWorkspace(userId, workspaceId, status ? ({ status } as any) : ({} as any), { skip: (page - 1) * limit, limit });
     return { items: serializeDocs(result.items), total: result.total };
   }
 
-  async create(userId: ObjectId, input: { name: string; description?: string; type: "software" | "research" | "planning" | "mixed" }) {
+  async create(userId: ObjectId, workspaceId: ObjectId, input: { name: string; description?: string; type: "software" | "research" | "planning" | "mixed" }) {
     const project = await this.projects.create({
       userId,
+      workspaceId,
       name: input.name,
       description: input.description ?? "",
       type: input.type,
@@ -44,29 +45,29 @@ export class ProjectsService {
     return serializeDoc(project);
   }
 
-  async get(userId: ObjectId, projectId: ObjectId) {
-    const project = await this.projects.findById(projectId, userId);
+  async get(userId: ObjectId, workspaceId: ObjectId, projectId: ObjectId) {
+    const project = await this.projects.findByIdForWorkspace(projectId, userId, workspaceId);
     if (!project) throw new NotFoundException("Project not found");
     return serializeDoc(project);
   }
 
-  async update(userId: ObjectId, projectId: ObjectId, patch: Record<string, unknown>) {
-    await this.get(userId, projectId);
-    return serializeDoc(await this.projects.updateById(projectId, userId, patch as any));
+  async update(userId: ObjectId, workspaceId: ObjectId, projectId: ObjectId, patch: Record<string, unknown>) {
+    await this.get(userId, workspaceId, projectId);
+    return serializeDoc(await this.projects.updateByIdForWorkspace(projectId, userId, workspaceId, patch as any));
   }
 
-  async delete(userId: ObjectId, projectId: ObjectId) {
-    await this.get(userId, projectId);
-    return { deleted: await this.projects.deleteById(projectId, userId) };
+  async delete(userId: ObjectId, workspaceId: ObjectId, projectId: ObjectId) {
+    await this.get(userId, workspaceId, projectId);
+    return { deleted: await this.projects.deleteByIdForWorkspace(projectId, userId, workspaceId) };
   }
 
-  async overview(userId: ObjectId, projectId: ObjectId) {
+  async overview(userId: ObjectId, workspaceId: ObjectId, projectId: ObjectId) {
     const [project, requirement, runs, artifacts, chats] = await Promise.all([
-      this.projects.findById(projectId, userId),
+      this.projects.findByIdForWorkspace(projectId, userId, workspaceId),
       this.requirements.findCurrent(userId, projectId),
-      this.runs.listByUser(userId, { projectId } as any, { limit: 5 }),
-      this.artifacts.listByUser(userId, { projectId } as any, { limit: 5 }),
-      this.chats.listByUser(userId, { projectId } as any, { limit: 5 })
+      this.runs.listByUserAndWorkspace(userId, workspaceId, { projectId } as any, { limit: 5 }),
+      this.artifacts.listByUserAndWorkspace(userId, workspaceId, { projectId } as any, { limit: 5 }),
+      this.chats.listByUserAndWorkspace(userId, workspaceId, { projectId } as any, { limit: 5 })
     ]);
     if (!project) throw new NotFoundException("Project not found");
     const workflowRunIds = runs.items.map((run) => run._id).filter(Boolean);
@@ -83,22 +84,25 @@ export class ProjectsService {
     };
   }
 
-  async timeline(userId: ObjectId, projectId: ObjectId) {
-    const runIds = (await this.runs.collection().find({ userId, projectId }, { projection: { _id: 1 } }).toArray()).map((run) => run._id);
+  async timeline(userId: ObjectId, workspaceId: ObjectId, projectId: ObjectId) {
+    await this.get(userId, workspaceId, projectId);
+    const runIds = (await this.runs.collection().find({ userId, workspaceId, projectId }, { projection: { _id: 1 } }).toArray()).map((run) => run._id);
     const events = await this.events.collection().find({ userId, workflowRunId: { $in: runIds } }).sort({ createdAt: -1 }).limit(50).toArray();
     return serializeDocs(events);
   }
 
-  async usageByProject(userId: ObjectId, projectId: ObjectId) {
+  async usageByProject(userId: ObjectId, workspaceId: ObjectId, projectId: ObjectId) {
+    await this.get(userId, workspaceId, projectId);
     const rows = await this.usage.collection().aggregate([
-      { $match: { userId, projectId } },
+      { $match: { userId, workspaceId, projectId } },
       { $group: { _id: "$source", inputTokens: { $sum: "$inputTokens" }, outputTokens: { $sum: "$outputTokens" }, costUsd: { $sum: "$costUsd" } } }
     ]).toArray();
     return rows;
   }
 
-  async graphState(userId: ObjectId, projectId: ObjectId) {
-    const run = await this.runs.collection().find({ userId, projectId }).sort({ createdAt: -1 }).limit(1).next();
+  async graphState(userId: ObjectId, workspaceId: ObjectId, projectId: ObjectId) {
+    await this.get(userId, workspaceId, projectId);
+    const run = await this.runs.collection().find({ userId, workspaceId, projectId }).sort({ createdAt: -1 }).limit(1).next();
     if (!run) return { run: null, events: [] };
     const events = await this.events.recent(userId, run._id, 200);
     return { run: serializeDoc(run), events: serializeDocs(events) };

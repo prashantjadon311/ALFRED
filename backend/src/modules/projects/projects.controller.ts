@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Headers, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
 import { z } from "zod";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
@@ -6,6 +6,7 @@ import { zodPipe } from "../../common/pipes/zod-validation.pipe";
 import { RequestUser } from "../../common/types/request-user";
 import { toObjectId } from "../../common/utils/object-id";
 import { ok, list } from "../../contracts/api-response.types";
+import { WorkspaceScopeService } from "../workspaces/workspace-scope.service";
 import { ProjectsService } from "./projects.service";
 
 const createProjectSchema = z.object({
@@ -21,51 +22,69 @@ const updateProjectSchema = createProjectSchema.partial().extend({
 @UseGuards(JwtAuthGuard)
 @Controller("projects")
 export class ProjectsController {
-  constructor(private readonly service: ProjectsService) {}
+  constructor(private readonly service: ProjectsService, private readonly scope: WorkspaceScopeService) {}
 
   @Get()
-  async list(@CurrentUser() user: RequestUser, @Query("page") page = "1", @Query("limit") limit = "20", @Query("status") status?: string) {
-    const result = await this.service.list(toObjectId(user.userId, "userId"), Number(page), Number(limit), status);
+  async list(@CurrentUser() user: RequestUser, @Headers("x-workspace-id") workspaceHeader: string | undefined, @Query("page") page = "1", @Query("limit") limit = "20", @Query("status") status?: string) {
+    const userId = toObjectId(user.userId, "userId");
+    const workspaceId = await this.scope.resolve(userId, workspaceHeader);
+    const result = await this.service.list(userId, workspaceId, Number(page), Number(limit), status);
     return list(result.items, { page: Number(page), limit: Number(limit), total: result.total, hasMore: Number(page) * Number(limit) < result.total });
   }
 
   @Post()
-  async create(@CurrentUser() user: RequestUser, @Body(zodPipe(createProjectSchema)) body: z.infer<typeof createProjectSchema>) {
-    return ok(await this.service.create(toObjectId(user.userId, "userId"), body));
+  async create(@CurrentUser() user: RequestUser, @Headers("x-workspace-id") workspaceHeader: string | undefined, @Body(zodPipe(createProjectSchema)) body: z.infer<typeof createProjectSchema>) {
+    const userId = toObjectId(user.userId, "userId");
+    const workspaceId = await this.scope.resolve(userId, workspaceHeader);
+    return ok(await this.service.create(userId, workspaceId, body));
   }
 
   @Get(":id")
-  async get(@CurrentUser() user: RequestUser, @Param("id") id: string) {
-    return ok(await this.service.get(toObjectId(user.userId, "userId"), toObjectId(id)));
+  async get(@CurrentUser() user: RequestUser, @Headers("x-workspace-id") workspaceHeader: string | undefined, @Param("id") id: string) {
+    const userId = toObjectId(user.userId, "userId");
+    const workspaceId = await this.scope.resolve(userId, workspaceHeader);
+    return ok(await this.service.get(userId, workspaceId, toObjectId(id)));
   }
 
   @Patch(":id")
-  async update(@CurrentUser() user: RequestUser, @Param("id") id: string, @Body(zodPipe(updateProjectSchema)) body: z.infer<typeof updateProjectSchema>) {
-    return ok(await this.service.update(toObjectId(user.userId, "userId"), toObjectId(id), body));
+  async update(@CurrentUser() user: RequestUser, @Headers("x-workspace-id") workspaceHeader: string | undefined, @Param("id") id: string, @Body(zodPipe(updateProjectSchema)) body: z.infer<typeof updateProjectSchema>) {
+    const userId = toObjectId(user.userId, "userId");
+    const workspaceId = await this.scope.resolve(userId, workspaceHeader);
+    return ok(await this.service.update(userId, workspaceId, toObjectId(id), body));
   }
 
   @Delete(":id")
-  async remove(@CurrentUser() user: RequestUser, @Param("id") id: string) {
-    return ok(await this.service.delete(toObjectId(user.userId, "userId"), toObjectId(id)));
+  async remove(@CurrentUser() user: RequestUser, @Headers("x-workspace-id") workspaceHeader: string | undefined, @Param("id") id: string) {
+    const userId = toObjectId(user.userId, "userId");
+    const workspaceId = await this.scope.resolve(userId, workspaceHeader);
+    return ok(await this.service.delete(userId, workspaceId, toObjectId(id)));
   }
 
   @Get(":id/overview")
-  async overview(@CurrentUser() user: RequestUser, @Param("id") id: string) {
-    return ok(await this.service.overview(toObjectId(user.userId, "userId"), toObjectId(id)));
+  async overview(@CurrentUser() user: RequestUser, @Headers("x-workspace-id") workspaceHeader: string | undefined, @Param("id") id: string) {
+    const userId = toObjectId(user.userId, "userId");
+    const workspaceId = await this.scope.resolve(userId, workspaceHeader);
+    return ok(await this.service.overview(userId, workspaceId, toObjectId(id)));
   }
 
   @Get(":id/timeline")
-  async timeline(@CurrentUser() user: RequestUser, @Param("id") id: string) {
-    return ok(await this.service.timeline(toObjectId(user.userId, "userId"), toObjectId(id)));
+  async timeline(@CurrentUser() user: RequestUser, @Headers("x-workspace-id") workspaceHeader: string | undefined, @Param("id") id: string) {
+    const userId = toObjectId(user.userId, "userId");
+    const workspaceId = await this.scope.resolve(userId, workspaceHeader);
+    return ok(await this.service.timeline(userId, workspaceId, toObjectId(id)));
   }
 
   @Get(":id/usage")
-  async usage(@CurrentUser() user: RequestUser, @Param("id") id: string) {
-    return ok(await this.service.usageByProject(toObjectId(user.userId, "userId"), toObjectId(id)));
+  async usage(@CurrentUser() user: RequestUser, @Headers("x-workspace-id") workspaceHeader: string | undefined, @Param("id") id: string) {
+    const userId = toObjectId(user.userId, "userId");
+    const workspaceId = await this.scope.resolve(userId, workspaceHeader);
+    return ok(await this.service.usageByProject(userId, workspaceId, toObjectId(id)));
   }
 
   @Get(":id/graph-state")
-  async graphState(@CurrentUser() user: RequestUser, @Param("id") id: string) {
-    return ok(await this.service.graphState(toObjectId(user.userId, "userId"), toObjectId(id)));
+  async graphState(@CurrentUser() user: RequestUser, @Headers("x-workspace-id") workspaceHeader: string | undefined, @Param("id") id: string) {
+    const userId = toObjectId(user.userId, "userId");
+    const workspaceId = await this.scope.resolve(userId, workspaceHeader);
+    return ok(await this.service.graphState(userId, workspaceId, toObjectId(id)));
   }
 }

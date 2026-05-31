@@ -5,6 +5,7 @@ import { BaseRepository, OwnedDoc } from "./base.repository";
 
 export interface ProjectDoc extends OwnedDoc {
   userId: ObjectId;
+  workspaceId: ObjectId;
   name: string;
   description: string;
   type: "software" | "research" | "planning" | "mixed";
@@ -20,9 +21,10 @@ export interface ProjectDoc extends OwnedDoc {
 @Injectable()
 export class ProjectsRepository extends BaseRepository<ProjectDoc> {
   constructor(db: DatabaseService) { super(db, "projects"); }
-  async incrementUsage(projectId: ObjectId, userId: ObjectId, inputTokens: number, outputTokens: number, costUsd: number) {
+  async incrementUsage(projectId: ObjectId, userId: ObjectId, inputTokens: number, outputTokens: number, costUsd: number, workspaceId?: ObjectId) {
+    const filter = workspaceId ? { _id: projectId, userId, workspaceId } : { _id: projectId, userId };
     await this.collection().updateOne(
-      { _id: projectId, userId } as any,
+      filter as any,
       { $inc: { "tokenUsage.inputTokens": inputTokens, "tokenUsage.outputTokens": outputTokens, "tokenUsage.totalTokens": inputTokens + outputTokens, "cost.totalUsd": costUsd } as any, $set: { updatedAt: new Date() } }
     );
   }

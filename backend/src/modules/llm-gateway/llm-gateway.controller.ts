@@ -1,4 +1,4 @@
-import { Body, Controller, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Headers, Post, UseGuards } from "@nestjs/common";
 import { z } from "zod";
 import { ObjectId } from "mongodb";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
@@ -8,6 +8,7 @@ import { RequestUser } from "../../common/types/request-user";
 import { ok } from "../../contracts/api-response.types";
 import { LlmRouterService } from "../../llm/llm-router.service";
 import { UsageService } from "../usage/usage.service";
+import { WorkspaceScopeService } from "../workspaces/workspace-scope.service";
 
 const chatSchema = z.object({
   prompt: z.string().min(1).max(100000),
@@ -34,13 +35,15 @@ const estimateCostSchema = z.object({
 @UseGuards(JwtAuthGuard)
 @Controller("llm")
 export class LlmGatewayController {
-  constructor(private readonly llm: LlmRouterService, private readonly usage: UsageService) {}
+  constructor(private readonly llm: LlmRouterService, private readonly usage: UsageService, private readonly scope: WorkspaceScopeService) {}
 
   @Post("chat")
-  async chat(@CurrentUser() u: RequestUser, @Body(zodPipe(chatSchema)) body: z.infer<typeof chatSchema>) {
+  async chat(@CurrentUser() u: RequestUser, @Headers("x-workspace-id") workspaceHeader: string | undefined, @Body(zodPipe(chatSchema)) body: z.infer<typeof chatSchema>) {
+    const userId = new ObjectId(u.userId);
     const result = await this.llm.chat({ prompt: body.prompt, systemPrompt: body.systemPrompt, providerType: body.providerType, modelName: body.modelName, nodeKey: "chat" });
     await this.usage.record({
-      userId: new ObjectId(u.userId),
+      userId,
+      workspaceId: await this.scope.resolve(userId, workspaceHeader),
       providerType: result.providerType,
       modelName: result.modelName,
       inputTokens: result.inputTokens,
@@ -53,13 +56,16 @@ export class LlmGatewayController {
   }
 
   @Post("compare")
-  async compare(@CurrentUser() u: RequestUser, @Body(zodPipe(compareSchema)) body: z.infer<typeof compareSchema>) {
+  async compare(@CurrentUser() u: RequestUser, @Headers("x-workspace-id") workspaceHeader: string | undefined, @Body(zodPipe(compareSchema)) body: z.infer<typeof compareSchema>) {
+    const userId = new ObjectId(u.userId);
+    const workspaceId = await this.scope.resolve(userId, workspaceHeader);
     const results = await Promise.all(
       body.models.map((m) => this.llm.chat({ prompt: body.prompt, systemPrompt: body.systemPrompt, providerType: m.providerType, modelName: m.modelName, nodeKey: "compare" }))
     );
     for (const result of results) {
       await this.usage.record({
-        userId: new ObjectId(u.userId),
+        userId,
+        workspaceId,
         providerType: result.providerType,
         modelName: result.modelName,
         inputTokens: result.inputTokens,

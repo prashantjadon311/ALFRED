@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from "@nestjs/comm
 import { ObjectId } from "mongodb";
 import { serializeDoc, serializeDocs } from "../../common/utils/object-id";
 import { WorkspacesRepository } from "../../repositories/workspaces.repository";
+import { WorkspaceScopeService } from "./workspace-scope.service";
 
 type WorkspaceInput = {
   name: string;
@@ -17,9 +18,10 @@ type WorkspaceInput = {
 
 @Injectable()
 export class WorkspacesService {
-  constructor(private readonly workspaces: WorkspacesRepository) {}
+  constructor(private readonly workspaces: WorkspacesRepository, private readonly scope: WorkspaceScopeService) {}
 
   async list(userId: ObjectId, page = 1, limit = 20, includeArchived = false) {
+    await this.scope.resolve(userId);
     const filter = includeArchived ? {} : ({ archived: { $ne: true } } as any);
     const result = await this.workspaces.listByUser(userId, filter, { skip: (page - 1) * limit, limit });
     return { items: serializeDocs(result.items), total: result.total };
