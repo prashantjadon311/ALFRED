@@ -1,6 +1,5 @@
 "use client";
 
-import { AnimatePresence, motion } from "framer-motion";
 import {
   Bot,
   Boxes,
@@ -15,20 +14,28 @@ import {
   Library,
   Search,
   Settings,
-  WalletCards,
   Workflow,
   X
 } from "lucide-react";
+import dynamic from "next/dynamic";
 import { usePathname, useRouter } from "next/navigation";
-import { Button } from "@/components/shared/Button";
 import { AppLink } from "@/components/shared/AppLink";
 import { Tooltip } from "@/components/shared/Tooltip";
 import { WorkspaceSwitcher } from "@/components/layout/WorkspaceSwitcher";
 import { UserMenu } from "@/components/layout/UserMenu";
-import { cn, formatCurrency, formatTokens } from "@/lib/utils";
-import { useChatStore } from "@/store/chat-store";
+import { cn } from "@/lib/utils";
 import { useUiStore } from "@/store/ui-store";
-import { useWorkspaceStore } from "@/store/workspace-store";
+
+const SidebarUsageCard = dynamic(() => import("./SidebarUsageCard").then((mod) => mod.SidebarUsageCard), {
+  ssr: false,
+  loading: () => <div className="h-[82px] rounded-card border border-primary/20 bg-primary/10" />
+});
+
+const buttonBase =
+  "inline-flex items-center justify-center gap-2 rounded-button font-medium transition duration-200 hover:-translate-y-px active:translate-y-0 disabled:cursor-not-allowed disabled:translate-y-0 disabled:opacity-50";
+const iconButton = "h-9 w-9 p-0";
+const primaryButton = "bg-primary text-white shadow-glow hover:bg-primary/90";
+const ghostButton = "text-slate-300 hover:bg-white/7 hover:text-white";
 
 const mainNav = [
   { label: "Dashboard", href: "/dashboard", icon: ChartNoAxesCombined },
@@ -52,17 +59,15 @@ export function AppSidebar() {
   const setMobileSidebarOpen = useUiStore((state) => state.setMobileSidebarOpen);
   const setCommandPaletteOpen = useUiStore((state) => state.setCommandPaletteOpen);
   const setPageLoading = useUiStore((state) => state.setPageLoading);
-  const createChat = useChatStore((state) => state.createChat);
-  const workspaces = useWorkspaceStore((state) => state.workspaces);
-  const activeWorkspaceId = useWorkspaceStore((state) => state.activeWorkspaceId);
-  const activeWorkspace = workspaces.find((workspace) => workspace.id === activeWorkspaceId) ?? workspaces[0];
 
   const closeMobile = () => setMobileSidebarOpen(false);
   const handleNewChat = () => {
-    createChat("New agent session");
-    setPageLoading(true);
-    router.push("/playground");
-    closeMobile();
+    void import("@/store/chat-store").then(({ useChatStore }) => {
+      useChatStore.getState().createChat("New agent session");
+      setPageLoading(true);
+      router.push("/playground");
+      closeMobile();
+    });
   };
 
   const content = (isCollapsed: boolean, isMobile = false) => (
@@ -72,13 +77,18 @@ export function AppSidebar() {
           <WorkspaceSwitcher collapsed={isCollapsed} onNavigate={closeMobile} />
         </div>
         {isMobile ? (
-          <Button className="ml-auto" size="icon" variant="ghost" aria-label="Close navigation" onClick={closeMobile}>
+          <button type="button" className={cn(buttonBase, iconButton, ghostButton, "ml-auto")} aria-label="Close navigation" onClick={closeMobile}>
             <X className="h-4 w-4" />
-          </Button>
+          </button>
         ) : (
-          <Button className={cn("ml-auto h-8 w-8", isCollapsed && "absolute left-12 top-4 z-10 bg-surface-darkElevated/90")} size="icon" variant="ghost" aria-label="Toggle sidebar" onClick={toggleSidebar}>
+          <button
+            type="button"
+            className={cn(buttonBase, iconButton, ghostButton, "ml-auto h-8 w-8", isCollapsed && "absolute left-12 top-4 z-10 bg-surface-darkElevated/90")}
+            aria-label="Toggle sidebar"
+            onClick={toggleSidebar}
+          >
             {isCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
-          </Button>
+          </button>
         )}
       </div>
 
@@ -106,16 +116,16 @@ export function AppSidebar() {
           ) : null}
         </button>
 
-        <Button
-          className={cn("mb-4 w-full", isCollapsed ? "h-10 px-0" : "")}
-          variant="primary"
+        <button
+          type="button"
+          className={cn(buttonBase, primaryButton, "mb-4 h-10 w-full px-4 text-sm", isCollapsed ? "px-0" : "")}
           aria-label="New chat"
           title="New Chat"
           onClick={handleNewChat}
         >
           <CirclePlus className="h-4 w-4" />
           {!isCollapsed ? "New Chat" : null}
-        </Button>
+        </button>
 
         <nav className="space-y-1" aria-label="Main navigation">
           {mainNav.map((item) => {
@@ -149,29 +159,7 @@ export function AppSidebar() {
       </div>
 
       <div className="space-y-3 border-t border-surface-darkBorder p-3">
-        <div className={cn("rounded-card border border-primary/20 bg-primary/10 p-2.5", isCollapsed && "grid place-items-center p-2")}>
-          {isCollapsed ? (
-            <Tooltip label="Usage">
-              <WalletCards className="h-4 w-4 text-primary-soft" />
-            </Tooltip>
-          ) : (
-            <>
-              <div className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-primary-soft">
-                <WalletCards className="h-3.5 w-3.5" /> Usage
-              </div>
-              <div className="grid grid-cols-2 gap-2 text-xs">
-                <div>
-                  <p className="text-muted">Tokens</p>
-                  <p className="font-semibold text-white">{formatTokens(activeWorkspace?.stats.tokenUsage ?? 0)}</p>
-                </div>
-                <div>
-                  <p className="text-muted">Cost</p>
-                  <p className="font-semibold text-white">{formatCurrency(activeWorkspace?.stats.cost ?? 0)}</p>
-                </div>
-              </div>
-            </>
-          )}
-        </div>
+        <SidebarUsageCard collapsed={isCollapsed} />
 
         <UserMenu collapsed={isCollapsed} />
       </div>
@@ -189,22 +177,14 @@ export function AppSidebar() {
         {content(collapsed)}
       </aside>
 
-      <AnimatePresence>
-        {mobileOpen ? (
-          <motion.div className="fixed inset-0 z-[90] md:hidden" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-            <button className="absolute inset-0 bg-black/60 backdrop-blur-sm" aria-label="Close navigation overlay" onClick={closeMobile} />
-            <motion.aside
-              className="relative z-[100] flex h-full w-[min(88vw,330px)] flex-col border-r border-surface-darkBorder bg-surface-dark/95 shadow-glow backdrop-blur-xl"
-              initial={{ x: -340 }}
-              animate={{ x: 0 }}
-              exit={{ x: -340 }}
-              transition={{ type: "spring", stiffness: 260, damping: 28 }}
-            >
-              {content(false, true)}
-            </motion.aside>
-          </motion.div>
-        ) : null}
-      </AnimatePresence>
+      {mobileOpen ? (
+        <div className="fixed inset-0 z-[90] md:hidden">
+          <button className="absolute inset-0 bg-black/60 backdrop-blur-sm" aria-label="Close navigation overlay" onClick={closeMobile} />
+          <aside className="relative z-[100] flex h-full w-[min(88vw,330px)] flex-col border-r border-surface-darkBorder bg-surface-dark/95 shadow-glow backdrop-blur-xl transition-transform duration-200">
+            {content(false, true)}
+          </aside>
+        </div>
+      ) : null}
     </>
   );
 }

@@ -1,5 +1,4 @@
 import { create } from "zustand";
-import { workspaces as mockWorkspaces } from "@/lib/mock-data";
 import type { Workspace } from "@/lib/types";
 import { isApiMode } from "@/lib/api-client";
 import { workspaceService } from "@/services/workspace-service";
@@ -14,6 +13,57 @@ import {
 
 const now = () => new Date().toISOString();
 const STORAGE_KEY = "alfred_workspaces_state";
+
+const mockWorkspaces: Workspace[] = [
+  {
+    id: "workspace-core",
+    name: "Prashant / Pro Workspace",
+    description: "Primary A.L.F.R.E.D. command workspace for agentic product and implementation loops.",
+    active: true,
+    createdAt: "2026-04-01T08:00:00Z",
+    updatedAt: "2026-05-21T14:00:00Z",
+    stats: {
+      projects: 5,
+      chats: 10,
+      workflowRuns: 5,
+      tokenUsage: 3_859_350,
+      cost: 749.55,
+      activeAgents: 7
+    }
+  },
+  {
+    id: "workspace-research",
+    name: "A.L.F.R.E.D. Lab",
+    description: "Sandbox for literature synthesis, model comparisons, and evidence review.",
+    active: false,
+    createdAt: "2026-04-20T08:00:00Z",
+    updatedAt: "2026-05-19T11:15:00Z",
+    stats: {
+      projects: 2,
+      chats: 14,
+      workflowRuns: 3,
+      tokenUsage: 812_400,
+      cost: 128.32,
+      activeAgents: 3
+    }
+  },
+  {
+    id: "workspace-audit",
+    name: "Personal Research",
+    description: "Private research, planning, and Claude critic quality checks.",
+    active: false,
+    createdAt: "2026-05-03T08:00:00Z",
+    updatedAt: "2026-05-20T17:20:00Z",
+    stats: {
+      projects: 3,
+      chats: 9,
+      workflowRuns: 4,
+      tokenUsage: 1_114_800,
+      cost: 218.05,
+      activeAgents: 5
+    }
+  }
+];
 
 interface StoredWorkspaceState {
   workspaces: Workspace[];

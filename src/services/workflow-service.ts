@@ -1,9 +1,112 @@
 import { agentNodes as mockNodes, workflows as mockWorkflows } from "@/lib/mocks/workflows";
 import { api, isApiMode } from "@/lib/api-client";
-import type { WorkflowRun, WorkflowStatus } from "@/lib/types";
+import type { AgentNode, AgentStatus, Severity, WorkflowRun, WorkflowStatus } from "@/lib/types";
 import { demoWait } from "./mock-latency";
 
 const wait = () => demoWait(120);
+
+type WorkflowDslPayload = {
+  version: "1.0";
+  name: string;
+  nodes: Array<Record<string, unknown> & { key: string; type: string; title: string }>;
+  edges: Array<Record<string, unknown> & { key: string; from: string; to: string }>;
+  stopConditions: {
+    maxIterations: number;
+    stopOnBudgetExceeded: boolean;
+    stopOnRequirementDrift: boolean;
+    stopOnUserStop: boolean;
+  };
+};
+
+export type WorkflowTemplate = WorkflowRun & {
+  description?: string;
+  workflowDsl?: WorkflowDslPayload;
+  maxTokens?: number;
+  maxCostUsd?: number;
+};
+
+export type WorkflowGraphEdge = {
+  id: string;
+  source: string;
+  target: string;
+  label?: string;
+};
+
+export type WorkflowGraphState = {
+  run: WorkflowRun;
+  nodes: AgentNode[];
+  edges: WorkflowGraphEdge[];
+  events: WorkflowEventRecord[];
+  activeNodeId?: string;
+  nodeStatuses: Record<string, string>;
+};
+
+export type WorkflowEventRecord = {
+  id?: string;
+  eventType: string;
+  workflowRunId?: string;
+  projectId?: string;
+  nodeKey?: string | null;
+  edgeKey?: string | null;
+  timestamp: string;
+  createdAt?: string;
+  message?: string;
+  data: Record<string, unknown>;
+};
+
+export type WorkflowIssueRecord = {
+  id: string;
+  title: string;
+  severity: Severity;
+  affectedArea?: string;
+  recommendation?: string;
+  status?: string;
+};
+
+export type WorkflowArtifactRecord = {
+  id: string;
+  title: string;
+  type: string;
+  createdAt?: string;
+};
+
+type WorkflowSaveInput = {
+  name: string;
+  description?: string;
+  projectId?: string;
+  workflowDsl: WorkflowDslPayload;
+  maxIterations?: number;
+  maxTokens?: number;
+  maxCostUsd?: number;
+};
+
+export function buildAgentStudioWorkflowDsl(name = "Agent Studio Workflow"): WorkflowDslPayload {
+  return {
+    version: "1.0",
+    name,
+    nodes: [
+      { key: "requirement_lock", type: "requirement_lock", title: "Requirement Lock", config: {} },
+      { key: "chatgpt_designer", type: "ai_agent", title: "ChatGPT Designer", agentRole: "product_designer", providerPreference: "openai", modelPreference: "GPT-5", promptTemplateKey: "chatgpt_designer_v1", budget: { maxTokens: 8000, maxCostUsd: 1 } },
+      { key: "gemini_architect", type: "ai_agent", title: "Gemini Architect", agentRole: "software_architect", providerPreference: "gemini", promptTemplateKey: "gemini_architect_v1" },
+      { key: "consensus_builder", type: "consensus", title: "Consensus Builder", promptTemplateKey: "consensus_builder_v1" },
+      { key: "claude_critic", type: "critic", title: "Claude Critic", agentRole: "critic", providerPreference: "anthropic", promptTemplateKey: "claude_critic_v1" },
+      { key: "issue_resolver", type: "resolver", title: "Issue Resolver", promptTemplateKey: "issue_resolver_v1" },
+      { key: "final_output", type: "final_output", title: "Final Output Generator", promptTemplateKey: "final_output_v1" },
+      { key: "codex_prompt_generator", type: "codex_prompt_generator", title: "Codex Prompt Generator", promptTemplateKey: "codex_prompt_generator_v1" }
+    ],
+    edges: [
+      { key: "e1", from: "requirement_lock", to: "chatgpt_designer" },
+      { key: "e2", from: "chatgpt_designer", to: "gemini_architect" },
+      { key: "e3", from: "gemini_architect", to: "consensus_builder" },
+      { key: "e4", from: "consensus_builder", to: "claude_critic" },
+      { key: "e5", from: "claude_critic", to: "issue_resolver", condition: { type: "has_issue_severity", severityIn: ["BLOCKER", "HIGH"] } },
+      { key: "e6", from: "issue_resolver", to: "chatgpt_designer", condition: { type: "iteration_remaining" } },
+      { key: "e7", from: "claude_critic", to: "final_output", condition: { type: "critic_approved" } },
+      { key: "e8", from: "final_output", to: "codex_prompt_generator", condition: { type: "task_type_in", values: ["software", "mixed"] } }
+    ],
+    stopConditions: { maxIterations: 3, stopOnBudgetExceeded: true, stopOnRequirementDrift: true, stopOnUserStop: true }
+  };
+}
 
 function patchRun(id: string, patch: Partial<WorkflowRun>): WorkflowRun {
   const run = mockWorkflows.find((workflow) => workflow.id === id) ?? mockWorkflows[0];
@@ -16,6 +119,22 @@ const status = (value?: string): WorkflowStatus => {
   if (value === "failed") return "Failed";
   if (value === "needs_human_review" || value === "waiting_approval") return "Waiting Approval";
   return "Stopped";
+};
+
+const nodeStatus = (value?: string): AgentStatus => {
+  if (value === "running") return "Running";
+  if (value === "completed") return "Success";
+  if (value === "failed") return "Failed";
+  if (value === "paused") return "Paused";
+  if (value === "needs_human_review" || value === "waiting_approval") return "Needs Approval";
+  return "Pending";
+};
+
+const severity = (value?: string): Severity => {
+  if (value === "BLOCKER" || value === "Blocker") return "Blocker";
+  if (value === "HIGH" || value === "High") return "High";
+  if (value === "MEDIUM" || value === "Medium") return "Medium";
+  return "Low";
 };
 
 function normalizeRun(run: any): WorkflowRun {
@@ -35,7 +154,165 @@ function normalizeRun(run: any): WorkflowRun {
   };
 }
 
+function normalizeGraphNode(node: any, activeNodeId?: string): AgentNode {
+  const statusValue = node.status ?? (node.key === activeNodeId ? "running" : "pending");
+  return {
+    id: node.key,
+    title: node.title ?? node.key,
+    provider: node.providerPreference ?? "mock",
+    model: node.modelPreference ?? node.promptTemplateKey ?? node.type,
+    role: node.agentRole ?? node.type,
+    status: nodeStatus(statusValue),
+    inputTokens: Number(node.inputTokens ?? 0),
+    outputTokens: Number(node.outputTokens ?? 0),
+    cost: Number(node.costUsd ?? 0),
+    latency: Number(node.latencyMs ?? 0),
+    systemPrompt: String(node.promptTemplateKey ?? node.type ?? "")
+  };
+}
+
+function normalizeGraphEdge(edge: any): WorkflowGraphEdge {
+  return {
+    id: edge.key,
+    source: edge.from,
+    target: edge.to,
+    label: edge.condition?.type
+  };
+}
+
+function normalizeEvent(event: any): WorkflowEventRecord {
+  return {
+    id: event.id,
+    eventType: event.eventType,
+    workflowRunId: event.workflowRunId,
+    projectId: event.projectId,
+    nodeKey: event.nodeKey ?? null,
+    edgeKey: event.edgeKey ?? null,
+    timestamp: event.timestamp ?? event.createdAt ?? new Date().toISOString(),
+    createdAt: event.createdAt ?? event.timestamp,
+    message: event.message,
+    data: event.data ?? {}
+  };
+}
+
+function normalizeIssue(issue: any): WorkflowIssueRecord {
+  return {
+    id: issue.id,
+    title: issue.title,
+    severity: severity(issue.severity),
+    affectedArea: issue.affectedArea,
+    recommendation: issue.recommendation,
+    status: issue.status
+  };
+}
+
+function normalizeArtifact(artifact: any): WorkflowArtifactRecord {
+  return {
+    id: artifact.id,
+    title: artifact.title,
+    type: artifact.type,
+    createdAt: artifact.createdAt
+  };
+}
+
+function normalizeWorkflow(workflow: any): WorkflowTemplate {
+  const workflowDsl = (workflow.workflowDsl ?? buildAgentStudioWorkflowDsl(workflow.name)) as WorkflowDslPayload;
+  return {
+    id: workflow.id,
+    projectId: workflow.projectId ?? "",
+    name: workflow.name ?? workflowDsl.name ?? "Agent Studio Workflow",
+    status: status(workflow.status),
+    currentNodeId: workflowDsl.nodes[0]?.key ?? "requirement_lock",
+    iteration: 0,
+    maxIterations: workflow.maxIterations ?? workflowDsl.stopConditions.maxIterations,
+    totalTokens: 0,
+    totalCost: 0,
+    startedAt: workflow.updatedAt ?? workflow.createdAt ?? "",
+    duration: "template",
+    claudeVerdict: "Ready to validate and run.",
+    description: workflow.description,
+    workflowDsl,
+    maxTokens: workflow.maxTokens,
+    maxCostUsd: workflow.maxCostUsd
+  };
+}
+
 export const workflowService = {
+  listWorkflows: async (): Promise<WorkflowTemplate[]> => {
+    if (isApiMode()) return (await api.get<any[]>("/workflows")).map(normalizeWorkflow);
+    await wait();
+    return mockWorkflows.map((workflow) => ({
+      ...workflow,
+      workflowDsl: buildAgentStudioWorkflowDsl(workflow.name),
+      maxTokens: 100000,
+      maxCostUsd: 5
+    }));
+  },
+
+  getWorkflow: async (id: string): Promise<WorkflowTemplate> => {
+    if (isApiMode()) return normalizeWorkflow(await api.get<any>(`/workflows/${id}`));
+    await wait();
+    const workflow = mockWorkflows.find((item) => item.id === id) ?? mockWorkflows[0];
+    return { ...workflow, workflowDsl: buildAgentStudioWorkflowDsl(workflow.name), maxTokens: 100000, maxCostUsd: 5 };
+  },
+
+  createWorkflow: async (input: WorkflowSaveInput): Promise<WorkflowTemplate> => {
+    if (isApiMode()) return normalizeWorkflow(await api.post<any>("/workflows", input));
+    await wait();
+    return {
+      id: `workflow-${Date.now()}`,
+      projectId: input.projectId ?? "",
+      name: input.name,
+      status: "Stopped",
+      currentNodeId: input.workflowDsl.nodes[0]?.key ?? "requirement_lock",
+      iteration: 0,
+      maxIterations: input.maxIterations ?? input.workflowDsl.stopConditions.maxIterations,
+      totalTokens: 0,
+      totalCost: 0,
+      startedAt: new Date().toISOString(),
+      duration: "template",
+      claudeVerdict: "Ready to validate and run.",
+      description: input.description,
+      workflowDsl: input.workflowDsl,
+      maxTokens: input.maxTokens,
+      maxCostUsd: input.maxCostUsd
+    };
+  },
+
+  updateWorkflow: async (id: string, input: WorkflowSaveInput): Promise<WorkflowTemplate> => {
+    if (isApiMode()) return normalizeWorkflow(await api.patch<any>(`/workflows/${id}`, input));
+    await wait();
+    return {
+      id,
+      projectId: input.projectId ?? "",
+      name: input.name,
+      status: "Stopped",
+      currentNodeId: input.workflowDsl.nodes[0]?.key ?? "requirement_lock",
+      iteration: 0,
+      maxIterations: input.maxIterations ?? input.workflowDsl.stopConditions.maxIterations,
+      totalTokens: 0,
+      totalCost: 0,
+      startedAt: new Date().toISOString(),
+      duration: "template",
+      claudeVerdict: "Ready to validate and run.",
+      description: input.description,
+      workflowDsl: input.workflowDsl,
+      maxTokens: input.maxTokens,
+      maxCostUsd: input.maxCostUsd
+    };
+  },
+
+  validateWorkflow: async (id: string, workflowDsl?: WorkflowDslPayload): Promise<{ valid: boolean; dsl?: WorkflowDslPayload }> => {
+    if (isApiMode()) return api.post<{ valid: boolean; dsl?: WorkflowDslPayload }>(`/workflows/${id}/validate`, workflowDsl ? { workflowDsl } : {});
+    await wait();
+    return { valid: true, dsl: workflowDsl ?? buildAgentStudioWorkflowDsl() };
+  },
+
+  runWorkflow: async (workflowId: string, projectId: string): Promise<WorkflowRun> => {
+    if (isApiMode()) return normalizeRun(await api.post<any>(`/workflows/${workflowId}/run`, { projectId }));
+    return workflowService.startRun(workflowId, projectId);
+  },
+
   getWorkflowRuns: async (): Promise<WorkflowRun[]> => {
     if (isApiMode()) return (await api.get<any[]>("/workflow-runs")).map(normalizeRun);
     await wait();
@@ -50,17 +327,33 @@ export const workflowService = {
     return mockWorkflows.find((workflow) => workflow.id === id) ?? mockWorkflows[0];
   },
 
+  getWorkflowRun: async (id: string): Promise<WorkflowRun> => workflowService.getWorkflowRunById(id),
+
   getRun: async (id: string): Promise<WorkflowRun> => workflowService.getWorkflowRunById(id),
 
-  getWorkflowGraphState: async (id: string) => {
+  getWorkflowRunGraphState: async (id: string): Promise<WorkflowGraphState> => {
     if (isApiMode()) {
       const graph = await api.get<any>(`/workflow-runs/${id}/graph-state`);
+      const dsl = graph.dsl ?? graph.run?.workflowDslSnapshot;
+      const run = normalizeRun(graph.run ?? {
+        id,
+        status: graph.status,
+        currentNodeKey: graph.currentNodeKey,
+        iteration: graph.iteration,
+        maxIterations: dsl?.stopConditions?.maxIterations,
+        totalInputTokens: graph.totalInputTokens,
+        totalOutputTokens: graph.totalOutputTokens,
+        totalCostUsd: graph.totalCostUsd,
+        claudeVerdict: graph.run?.claudeVerdict
+      });
+      const activeNodeId = graph.currentNodeKey ?? graph.run?.currentNodeKey;
       return {
-        run: graph.run ? normalizeRun(graph.run) : null,
-        nodes: graph.run?.workflowDslSnapshot?.nodes ?? mockNodes,
-        events: graph.events ?? [],
-        activeNodeId: graph.run?.currentNodeKey,
-        nodeStatuses: {}
+        run,
+        nodes: (graph.nodes ?? dsl?.nodes ?? []).map((node: any) => normalizeGraphNode(node, activeNodeId)),
+        edges: (graph.edges ?? dsl?.edges ?? []).map(normalizeGraphEdge),
+        events: (graph.events ?? []).map(normalizeEvent),
+        activeNodeId,
+        nodeStatuses: graph.nodeStatuses ?? {}
       };
     }
     await wait();
@@ -68,33 +361,65 @@ export const workflowService = {
     return {
       run,
       nodes: mockNodes,
+      edges: [],
+      events: [],
       activeNodeId: run.currentNodeId,
       nodeStatuses: Object.fromEntries(mockNodes.map((node) => [node.id, node.status]))
     };
   },
 
+  getWorkflowGraphState: async (id: string) => workflowService.getWorkflowRunGraphState(id),
+
   getGraphState: async (id: string) => workflowService.getWorkflowGraphState(id),
+
+  getWorkflowRunEvents: async (id: string): Promise<WorkflowEventRecord[]> => {
+    if (isApiMode()) return (await api.get<any[]>(`/workflow-runs/${id}/events?limit=200`)).map(normalizeEvent);
+    await wait();
+    return [];
+  },
+
+  getWorkflowEvents: async (id: string) => workflowService.getWorkflowRunEvents(id),
+
+  getWorkflowRunLogs: async (id: string): Promise<WorkflowEventRecord[]> => {
+    if (isApiMode()) return (await api.get<any[]>(`/workflow-runs/${id}/logs?limit=200`)).map(normalizeEvent);
+    await wait();
+    return [];
+  },
+
+  getWorkflowRunIssues: async (id: string): Promise<WorkflowIssueRecord[]> => {
+    if (isApiMode()) return (await api.get<any[]>(`/workflow-runs/${id}/issues`)).map(normalizeIssue);
+    await wait();
+    return [];
+  },
+
+  getWorkflowRunArtifacts: async (id: string): Promise<WorkflowArtifactRecord[]> => {
+    if (isApiMode()) return (await api.get<any[]>(`/workflow-runs/${id}/artifacts`)).map(normalizeArtifact);
+    await wait();
+    return [];
+  },
 
   getNodes: async () => {
     await wait();
     return mockNodes;
   },
 
-  pauseRun: async (id: string) => {
+  pauseWorkflowRun: async (id: string) => {
     if (!isApiMode()) return patchRun(id, { status: "Paused" });
-    await api.post(`/workflow-runs/${id}/pause`);
-    return workflowService.getWorkflowRunById(id);
+    return normalizeRun(await api.post<any>(`/workflow-runs/${id}/pause`));
   },
-  resumeRun: async (id: string) => {
+  pauseRun: async (id: string) => workflowService.pauseWorkflowRun(id),
+
+  resumeWorkflowRun: async (id: string) => {
     if (!isApiMode()) return patchRun(id, { status: "Running" });
-    await api.post(`/workflow-runs/${id}/resume`);
-    return workflowService.getWorkflowRunById(id);
+    return normalizeRun(await api.post<any>(`/workflow-runs/${id}/resume`));
   },
-  stopRun: async (id: string) => {
+  resumeRun: async (id: string) => workflowService.resumeWorkflowRun(id),
+
+  stopWorkflowRun: async (id: string) => {
     if (!isApiMode()) return patchRun(id, { status: "Stopped" as WorkflowStatus });
-    await api.post(`/workflow-runs/${id}/stop`);
-    return workflowService.getWorkflowRunById(id);
+    return normalizeRun(await api.post<any>(`/workflow-runs/${id}/stop`));
   },
+  stopRun: async (id: string) => workflowService.stopWorkflowRun(id),
 
   startRun: async (_workflowId: string, projectId: string): Promise<WorkflowRun> => {
     if (isApiMode()) return normalizeRun(await api.post<any>(`/workflows/${_workflowId}/run`, { projectId }));

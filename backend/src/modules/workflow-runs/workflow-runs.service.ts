@@ -1,10 +1,11 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
 import { ObjectId } from "mongodb";
 import { WorkflowEventType, WorkflowEventPayload } from "../../contracts/workflow-event.types";
 import { WorkflowRunsRepository } from "../../repositories/workflow-runs.repository";
 import { WorkflowEventsRepository } from "../../repositories/workflow-events.repository";
 import { CritiqueIssuesRepository } from "../../repositories/critique-issues.repository";
 import { ArtifactsRepository } from "../../repositories/artifacts.repository";
+import { WorkflowQueueService } from "../../queues/workflow.queue";
 import { RealtimeEventBus } from "../realtime/realtime-event-bus.service";
 
 @Injectable()
@@ -14,6 +15,7 @@ export class WorkflowRunsService {
     private readonly events: WorkflowEventsRepository,
     private readonly issues: CritiqueIssuesRepository,
     private readonly artifacts: ArtifactsRepository,
+    private readonly queue: WorkflowQueueService,
     private readonly bus: RealtimeEventBus
   ) {}
 
@@ -33,25 +35,32 @@ export class WorkflowRunsService {
   async pause(userId: ObjectId, workspaceId: ObjectId, id: ObjectId) {
     const run = await this.runs.findByIdForWorkspace(id, userId, workspaceId);
     if (!run) throw new NotFoundException("Workflow run not found");
-    await this.runs.updateStatus(id, userId, "paused");
+    if (!["queued", "running"].includes(run.status)) return this.runs.serialize(run);
+    const updated = await this.runs.updateStatus(id, userId, "paused");
     await this.emit(userId, id, "run.paused", run.projectId, { status: "paused" });
-    return { status: "paused" };
+    return this.runs.serialize(updated);
   }
 
   async resume(userId: ObjectId, workspaceId: ObjectId, id: ObjectId) {
     const run = await this.runs.findByIdForWorkspace(id, userId, workspaceId);
     if (!run) throw new NotFoundException("Workflow run not found");
-    await this.runs.updateStatus(id, userId, "running");
-    await this.emit(userId, id, "run.resumed", run.projectId, { status: "running" });
-    return { status: "resumed" };
+    if (["queued", "running"].includes(run.status)) return this.runs.serialize(run);
+    if (["completed", "failed", "stopped", "needs_human_review"].includes(run.status)) {
+      throw new BadRequestException("Workflow run cannot be resumed");
+    }
+    const updated = await this.runs.updateStatus(id, userId, "queued", { stopReason: undefined, errorMessage: undefined } as any);
+    await this.queue.enqueueResume(id.toHexString(), userId.toHexString());
+    await this.emit(userId, id, "run.resumed", run.projectId, { status: "queued" });
+    return this.runs.serialize(updated);
   }
 
   async stop(userId: ObjectId, workspaceId: ObjectId, id: ObjectId) {
     const run = await this.runs.findByIdForWorkspace(id, userId, workspaceId);
     if (!run) throw new NotFoundException("Workflow run not found");
-    await this.runs.updateStatus(id, userId, "failed", { stopReason: "user_stopped" });
+    if (!["queued", "running", "paused"].includes(run.status)) return this.runs.serialize(run);
+    const updated = await this.runs.updateStatus(id, userId, "stopped", { stopReason: "user_stopped" });
     await this.emit(userId, id, "run.stopped", run.projectId, { status: "stopped" });
-    return { status: "stopped" };
+    return this.runs.serialize(updated);
   }
 
   async getGraphState(userId: ObjectId, workspaceId: ObjectId, id: ObjectId) {
@@ -64,14 +73,25 @@ export class WorkflowRunsService {
         nodeStatuses[e.nodeKey] = (e.data as any).status;
       }
     }
+    const dsl = run.workflowDslSnapshot;
+    const nodes = dsl.nodes.map((node) => ({
+      ...node,
+      status: nodeStatuses[node.key] ?? (node.key === run.currentNodeKey ? "running" : "pending")
+    }));
     return {
+      run: this.runs.serialize(run),
       status: run.status,
       currentNodeKey: run.currentNodeKey,
       iteration: run.iteration,
+      totalInputTokens: run.totalInputTokens,
+      totalOutputTokens: run.totalOutputTokens,
+      totalTokens: (run.totalInputTokens ?? 0) + (run.totalOutputTokens ?? 0),
       totalCostUsd: run.totalCostUsd,
       budgetState: run.budgetState,
+      nodes,
+      edges: dsl.edges,
       nodeStatuses,
-      dsl: run.workflowDslSnapshot
+      dsl
     };
   }
 

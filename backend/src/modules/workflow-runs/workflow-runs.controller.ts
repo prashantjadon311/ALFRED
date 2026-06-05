@@ -70,11 +70,24 @@ export class WorkflowRunsController {
   }
 
   @Get(":id/events")
-  async events(@CurrentUser() u: RequestUser, @Headers("x-workspace-id") workspaceHeader: string | undefined, @Req() req: FastifyRequest, @Res() res: FastifyReply, @Param("id") id: string) {
+  async events(
+    @CurrentUser() u: RequestUser,
+    @Headers("x-workspace-id") workspaceHeader: string | undefined,
+    @Req() req: FastifyRequest,
+    @Res() res: FastifyReply,
+    @Param("id") id: string,
+    @Query("limit") limit = "100",
+    @Query("stream") stream?: string
+  ) {
     const userId = toObjectId(u.userId, "userId");
     const workspaceId = await this.scope.resolve(userId, workspaceHeader);
     const runId = toObjectId(id);
-    const persisted = await this.service.getRecentEvents(userId, workspaceId, runId, 100);
+    const persisted = await this.service.getRecentEvents(userId, workspaceId, runId, Number(limit));
+    const wantsStream = stream === "true" || String(req.headers.accept ?? "").includes("text/event-stream");
+
+    if (!wantsStream) {
+      return res.send(ok(persisted));
+    }
 
     res.raw.writeHead(200, {
       "Content-Type": "text/event-stream",

@@ -1,6 +1,5 @@
 "use client";
 
-import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import { useChatStore } from "@/store/chat-store";
@@ -47,22 +46,14 @@ export function PlaygroundLayout() {
         <ChatWorkspace chatId={activeChatId} onOpenConversations={() => setConversationOpen(true)} />
       </div>
 
-      <AnimatePresence>
-        {conversationOpen ? (
-          <motion.div className="fixed inset-0 z-[90] lg:hidden" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-            <button className="absolute inset-0 bg-black/55 backdrop-blur-sm" aria-label="Close conversations" onClick={() => setConversationOpen(false)} />
-            <motion.div
-              className="relative z-[100] h-full w-[min(88vw,320px)] overflow-hidden border-r border-surface-darkBorder bg-surface-dark/96 shadow-glow"
-              initial={{ x: -330 }}
-              animate={{ x: 0 }}
-              exit={{ x: -330 }}
-              transition={{ type: "spring", stiffness: 260, damping: 28 }}
-            >
-              <ConversationSidebar activeChatId={activeChatId} onSelect={selectChat} onCreate={create} onClose={() => setConversationOpen(false)} />
-            </motion.div>
-          </motion.div>
-        ) : null}
-      </AnimatePresence>
+      {conversationOpen ? (
+        <div className="fixed inset-0 z-[90] lg:hidden">
+          <button className="absolute inset-0 bg-black/55 backdrop-blur-sm" aria-label="Close conversations" onClick={() => setConversationOpen(false)} />
+          <div className="relative z-[100] h-full w-[min(88vw,320px)] overflow-hidden border-r border-surface-darkBorder bg-surface-dark/96 shadow-glow transition-transform duration-200">
+            <ConversationSidebar activeChatId={activeChatId} onSelect={selectChat} onCreate={create} onClose={() => setConversationOpen(false)} />
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -187,8 +187,14 @@ describe("A.L.F.R.E.D. HTTP vertical slice", () => {
 
     const graph = await authed().get(`/workflow-runs/${workflowRunId}/graph-state`).expect(200);
     expect(graph.body.data.status).toBe("completed");
+    expect(graph.body.data.nodes.length).toBeGreaterThan(0);
+    expect(graph.body.data.edges.length).toBeGreaterThan(0);
+    expect(graph.body.data.totalTokens).toBeGreaterThan(0);
     expect(graph.body.data.dsl.nodes.length).toBeGreaterThan(0);
     expect(graph.body.data.nodeStatuses.claude_critic).toBe("completed");
+
+    const events = await authed().get(`/workflow-runs/${workflowRunId}/events?limit=500`).expect(200);
+    expect(events.body.data.map((event: { eventType: string }) => event.eventType)).toEqual(expect.arrayContaining(["edge.traversed", "run.completed"]));
 
     const usage = await authed().get("/usage/summary").expect(200);
     expect(usage.body.data.totalTokens).toBeGreaterThan(0);
@@ -201,6 +207,170 @@ describe("A.L.F.R.E.D. HTTP vertical slice", () => {
     await expectCollectionCount("revision_patches", { userId: ownerObjectId, workflowRunId: workflowRunObjectId }, 1);
     await expectCollectionCount("usage_events", { userId: ownerObjectId, workflowRunId: workflowRunObjectId }, 8);
   }, 60000);
+
+  it("pauses, resumes, stops, and scopes workflow run controls", async () => {
+    const paused = await createRunnableWorkflow("Workflow Control Pause Resume");
+    const pausedRunResponse = await authed().post(`/workflows/${paused.workflowId}/run`).send({ projectId: paused.projectId }).expect(201);
+    const pausedRunId = pausedRunResponse.body.data.id;
+
+    await authed().post(`/workflow-runs/${pausedRunId}/pause`).expect(201).expect(({ body }) => {
+      expect(body.data.status).toBe("paused");
+    });
+    await delay(500);
+    await authed().get(`/workflow-runs/${pausedRunId}`).expect(200).expect(({ body }) => {
+      expect(body.data.status).toBe("paused");
+    });
+
+    let controlEvents = await authed().get(`/workflow-runs/${pausedRunId}/events?limit=200`).expect(200);
+    expect(controlEvents.body.data.map((event: { eventType: string }) => event.eventType)).toContain("run.paused");
+    const pausedArtifacts = await authed().get(`/workflow-runs/${pausedRunId}/artifacts`).expect(200);
+    expect(pausedArtifacts.body.data.length).toBe(0);
+
+    await authed().post(`/workflow-runs/${pausedRunId}/resume`).expect(201).expect(({ body }) => {
+      expect(body.data.status).toBe("queued");
+    });
+    const resumedRun = await waitForRun(pausedRunId, "completed");
+    expect(resumedRun.status).toBe("completed");
+    controlEvents = await authed().get(`/workflow-runs/${pausedRunId}/events?limit=500`).expect(200);
+    expect(controlEvents.body.data.map((event: { eventType: string }) => event.eventType)).toContain("run.resumed");
+
+    const duplicateExecutions = await db.db().collection("agent_executions").aggregate([
+      { $match: { workflowRunId: new ObjectId(pausedRunId) } },
+      { $group: { _id: "$idempotencyKey", count: { $sum: 1 } } },
+      { $match: { count: { $gt: 1 } } }
+    ]).toArray();
+    expect(duplicateExecutions).toHaveLength(0);
+
+    const stopped = await createRunnableWorkflow("Workflow Control Stop");
+    const stoppedRunResponse = await authed().post(`/workflows/${stopped.workflowId}/run`).send({ projectId: stopped.projectId }).expect(201);
+    const stoppedRunId = stoppedRunResponse.body.data.id;
+    await authed().post(`/workflow-runs/${stoppedRunId}/stop`).expect(201).expect(({ body }) => {
+      expect(body.data.status).toBe("stopped");
+    });
+    const executionCountAfterStop = await db.db().collection("agent_executions").countDocuments({ workflowRunId: new ObjectId(stoppedRunId) });
+    await delay(500);
+    await authed().get(`/workflow-runs/${stoppedRunId}`).expect(200).expect(({ body }) => {
+      expect(body.data.status).toBe("stopped");
+    });
+    expect(await db.db().collection("agent_executions").countDocuments({ workflowRunId: new ObjectId(stoppedRunId) })).toBe(executionCountAfterStop);
+    controlEvents = await authed().get(`/workflow-runs/${stoppedRunId}/events?limit=200`).expect(200);
+    expect(controlEvents.body.data.map((event: { eventType: string }) => event.eventType)).toContain("run.stopped");
+
+    const otherAuth = await request(app.getHttpServer())
+      .post("/auth/register")
+      .send({ name: "Workflow Control Intruder", email: `control-${Date.now()}@alfred.local`, password: "password123" })
+      .expect(201);
+    for (const action of ["pause", "resume", "stop"]) {
+      await request(app.getHttpServer()).post(`/workflow-runs/${stoppedRunId}/${action}`).set("Authorization", `Bearer ${otherAuth.body.data.accessToken}`).expect(404);
+    }
+  }, 60000);
+
+  it("validates and runs a custom workflow DSL with scoped run access", async () => {
+    const project = await authed()
+      .post("/projects")
+      .send({ name: "Custom DSL Execution Project", description: "Agent Studio custom workflow DSL run.", type: "software" })
+      .expect(201);
+    const projectId = project.body.data.id;
+
+    await authed()
+      .post(`/projects/${projectId}/requirement-contracts`)
+      .send({
+        originalRequirement: "Create a concise software plan and critique it before final output.",
+        lockedGoal: "Validate custom DSL execution through the backend workflow runner.",
+        taskType: "software",
+        nonNegotiables: ["Use workflow DSL edges", "Persist traversal events"],
+        successCriteria: ["Run completes", "Edge events are present"],
+        forbiddenChanges: ["Skip critic review"]
+      })
+      .expect(201);
+
+    const workflowDsl = {
+      version: "1.0",
+      name: "Custom Critic Loop DSL",
+      nodes: [
+        { key: "requirement_lock", type: "requirement_lock", title: "Requirement Lock", config: {} },
+        { key: "claude_critic", type: "critic", title: "Claude Critic", promptTemplateKey: "claude_critic_v1" },
+        { key: "issue_resolver", type: "resolver", title: "Issue Resolver", promptTemplateKey: "issue_resolver_v1" },
+        { key: "final_output", type: "final_output", title: "Final Output", promptTemplateKey: "final_output_v1" }
+      ],
+      edges: [
+        { key: "custom_e1", from: "requirement_lock", to: "claude_critic" },
+        { key: "custom_e2", from: "claude_critic", to: "issue_resolver", condition: { type: "has_issue_severity", severityIn: ["BLOCKER", "HIGH"] } },
+        { key: "custom_e3", from: "issue_resolver", to: "claude_critic", condition: { type: "iteration_remaining" } },
+        { key: "custom_e4", from: "claude_critic", to: "final_output", condition: { type: "critic_approved" } }
+      ],
+      stopConditions: { maxIterations: 2, stopOnBudgetExceeded: true, stopOnRequirementDrift: true, stopOnUserStop: true }
+    };
+
+    const workflow = await authed()
+      .post("/workflows")
+      .send({
+        name: "Custom Critic Loop DSL",
+        description: "Custom Agent Studio DSL template.",
+        projectId,
+        workflowDsl,
+        maxIterations: 2,
+        maxTokens: 100000,
+        maxCostUsd: 5
+      })
+      .expect(201);
+    const workflowId = workflow.body.data.id;
+
+    await authed().post(`/workflows/${workflowId}/validate`).send({ workflowDsl }).expect(201).expect(({ body }) => {
+      expect(body.data.valid).toBe(true);
+      expect(body.data.dsl.nodes.map((node: { key: string }) => node.key)).toEqual(["requirement_lock", "claude_critic", "issue_resolver", "final_output"]);
+    });
+
+    const runResponse = await authed().post(`/workflows/${workflowId}/run`).send({ projectId }).expect(201);
+    const workflowRunId = runResponse.body.data.id;
+    const run = await waitForTerminalRun(workflowRunId);
+    expect(["completed", "needs_human_review"]).toContain(run.status);
+
+    const logs = await authed().get(`/workflow-runs/${workflowRunId}/logs?limit=500`).expect(200);
+    const eventTypes = logs.body.data.map((event: { eventType: string }) => event.eventType);
+    expect(eventTypes).toEqual(expect.arrayContaining(["node.status.changed", "edge.traversed"]));
+    expect(eventTypes).toContain(run.status === "completed" ? "run.completed" : "run.needs_human_review");
+
+    const graph = await authed().get(`/workflow-runs/${workflowRunId}/graph-state`).expect(200);
+    expect(graph.body.data.status).toBe(run.status);
+    expect(graph.body.data.dsl.nodes.map((node: { key: string }) => node.key)).toEqual(["requirement_lock", "claude_critic", "issue_resolver", "final_output"]);
+
+    const otherAuth = await request(app.getHttpServer())
+      .post("/auth/register")
+      .send({ name: "Workspace Isolation Auditor", email: `isolation-${Date.now()}@alfred.local`, password: "password123" })
+      .expect(201);
+    await request(app.getHttpServer()).get(`/workflows/${workflowId}`).set("Authorization", `Bearer ${otherAuth.body.data.accessToken}`).expect(404);
+    await request(app.getHttpServer()).get(`/workflow-runs/${workflowRunId}`).set("Authorization", `Bearer ${otherAuth.body.data.accessToken}`).expect(404);
+    await request(app.getHttpServer()).get(`/workflow-runs/${workflowRunId}/graph-state`).set("Authorization", `Bearer ${otherAuth.body.data.accessToken}`).expect(404);
+    await request(app.getHttpServer()).get(`/workflow-runs/${workflowRunId}/logs`).set("Authorization", `Bearer ${otherAuth.body.data.accessToken}`).expect(404);
+    await request(app.getHttpServer()).get(`/workflow-runs/${workflowRunId}/events`).set("Authorization", `Bearer ${otherAuth.body.data.accessToken}`).expect(404);
+    await request(app.getHttpServer()).get(`/workflow-runs/${workflowRunId}/issues`).set("Authorization", `Bearer ${otherAuth.body.data.accessToken}`).expect(404);
+    await request(app.getHttpServer()).get(`/workflow-runs/${workflowRunId}/artifacts`).set("Authorization", `Bearer ${otherAuth.body.data.accessToken}`).expect(404);
+  }, 60000);
+
+  async function createRunnableWorkflow(name: string) {
+    const project = await authed()
+      .post("/projects")
+      .send({ name, description: "Workflow control e2e project.", type: "software" })
+      .expect(201);
+    const projectId = project.body.data.id;
+    await authed()
+      .post(`/projects/${projectId}/requirement-contracts`)
+      .send({
+        originalRequirement: "Build a controllable workflow run.",
+        lockedGoal: "Exercise pause, resume, and stop controls without changing requirements.",
+        taskType: "software",
+        nonNegotiables: ["Persist control events", "Avoid duplicate node execution"],
+        successCriteria: ["Controls are scoped", "Resume completes safely"],
+        forbiddenChanges: ["Skip control checks"]
+      })
+      .expect(201);
+    const workflow = await authed()
+      .post("/workflows")
+      .send({ name, description: "Workflow control e2e template.", projectId, maxIterations: 3, maxTokens: 100000, maxCostUsd: 5 })
+      .expect(201);
+    return { projectId, workflowId: workflow.body.data.id };
+  }
 
   function authed() {
     const withAuth = (testRequest: SupertestRequest) => testRequest.set("Authorization", `Bearer ${accessToken}`);
@@ -222,6 +392,18 @@ describe("A.L.F.R.E.D. HTTP vertical slice", () => {
       await delay(250);
     }
     throw new Error(`Workflow run ${workflowRunId} did not reach ${expectedStatus}; last status was ${String(latest?.status)}`);
+  }
+
+  async function waitForTerminalRun(workflowRunId: string): Promise<Record<string, unknown>> {
+    let latest: Record<string, unknown> | undefined;
+    for (let attempt = 0; attempt < 80; attempt += 1) {
+      const response = await authed().get(`/workflow-runs/${workflowRunId}`).expect(200);
+      latest = response.body.data;
+      if (latest && ["completed", "needs_human_review"].includes(String(latest.status))) return latest;
+      if (latest?.status === "failed") break;
+      await delay(250);
+    }
+    throw new Error(`Workflow run ${workflowRunId} did not reach a safe terminal status; last status was ${String(latest?.status)}`);
   }
 
   async function expectCollectionCount(collectionName: string, filter: Record<string, unknown>, minimum: number) {

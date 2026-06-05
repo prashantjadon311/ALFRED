@@ -1,19 +1,12 @@
 "use client";
 
 import { Copy, Download, GitBranch, RefreshCw } from "lucide-react";
-import dynamic from "next/dynamic";
-import ReactMarkdown from "react-markdown";
 import { ArtifactOpenButton } from "@/components/playground/ArtifactOpenButton";
 import { Button } from "@/components/shared/Button";
-import { detectLanguage } from "@/lib/markdown";
 import type { Message } from "@/lib/types";
 import { cn, contentLooksLikeArtifact } from "@/lib/utils";
+import { LightMessageContent } from "./LightMessageContent";
 import { TokenFooter } from "./TokenFooter";
-
-const CodeBlockHighlighter = dynamic(() => import("./CodeBlockHighlighter").then((mod) => mod.CodeBlockHighlighter), {
-  ssr: false,
-  loading: () => <pre className="overflow-x-auto p-4 text-sm text-slate-300">Loading code...</pre>
-});
 
 export function MessageBubble({
   message,
@@ -61,34 +54,7 @@ export function MessageBubble({
         </div>
 
         <div className="prose max-w-none text-sm leading-7">
-          <ReactMarkdown
-            components={{
-              code({ inline, className, children, ...props }: any) {
-                const language = detectLanguage(className);
-                const code = String(children).replace(/\n$/, "");
-                if (inline) {
-                  return (
-                    <code className="rounded bg-black/25 px-1.5 py-0.5 text-primary-soft" {...props}>
-                      {children}
-                    </code>
-                  );
-                }
-                return (
-                  <div className="my-4 overflow-hidden rounded-card border border-surface-darkBorder" style={{ background: "var(--code-bg)" }}>
-                    <div className="flex items-center justify-between border-b border-surface-darkBorder px-3 py-2">
-                      <span className="text-xs font-semibold uppercase text-muted">{language}</span>
-                      <button className="rounded-button px-2 py-1 text-xs text-slate-300 transition hover:bg-white/7 hover:text-white" onClick={() => navigator.clipboard?.writeText(code)}>
-                        Copy code
-                      </button>
-                    </div>
-                    <CodeBlockHighlighter code={code} language={language} />
-                  </div>
-                );
-              }
-            }}
-          >
-            {message.content}
-          </ReactMarkdown>
+          <LightMessageContent content={message.content} role={message.role} />
         </div>
 
         {contentLooksLikeArtifact(message.content) ? <ArtifactOpenButton onClick={() => onOpenArtifact?.(message)} /> : null}

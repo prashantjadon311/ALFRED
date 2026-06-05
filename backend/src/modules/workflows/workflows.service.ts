@@ -57,10 +57,10 @@ export class WorkflowsService {
     return { deleted: true };
   }
 
-  async validate(userId: ObjectId, workspaceId: ObjectId, id: ObjectId) {
+  async validate(userId: ObjectId, workspaceId: ObjectId, id: ObjectId, workflowDsl?: unknown) {
     const doc = await this.repo.findByIdForWorkspace(id, userId, workspaceId);
     if (!doc) throw new NotFoundException("Workflow not found");
-    const result = this.validator.validate(doc.workflowDsl);
+    const result = this.validator.validate(this.hasWorkflowDsl(workflowDsl) ? workflowDsl : doc.workflowDsl);
     return { valid: true, dsl: result };
   }
 

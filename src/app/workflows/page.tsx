@@ -6,13 +6,15 @@ import { AppLink } from "@/components/shared/AppLink";
 import { Button } from "@/components/shared/Button";
 import { GlassCard } from "@/components/shared/GlassCard";
 import { StatusBadge } from "@/components/shared/StatusBadge";
+import { isApiMode } from "@/lib/api-client";
 import { formatCurrency, formatTokens } from "@/lib/utils";
 import { useWorkflowStore } from "@/store/workflow-store";
 
 export default function WorkflowsPage() {
   const workflows = useWorkflowStore((state) => state.workflows);
-  const loadWorkflows = useWorkflowStore((state) => state.loadFromApi);
+  const loadWorkflows = useWorkflowStore((state) => state.loadRunsFromApi);
   const runWorkflow = useWorkflowStore((state) => state.runWorkflowMock);
+  const apiMode = isApiMode();
   useEffect(() => {
     void loadWorkflows();
   }, [loadWorkflows]);
@@ -40,7 +42,7 @@ export default function WorkflowsPage() {
                 <span>{formatCurrency(workflow.totalCost)}</span>
               </div>
               <AppLink href={`/workflows/${workflow.id}/run`} className="mt-4 block">
-                <Button className="w-full" size="sm" variant="secondary" icon={<Play className="h-4 w-4" />} onClick={() => runWorkflow(workflow.id)}>Open run</Button>
+                <Button className="w-full" size="sm" variant="secondary" icon={<Play className="h-4 w-4" />} onClick={() => { if (!apiMode) runWorkflow(workflow.id); }}>Open run</Button>
               </AppLink>
             </div>
           ))}

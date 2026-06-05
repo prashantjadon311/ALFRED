@@ -1,6 +1,5 @@
 "use client";
 
-import { AnimatePresence, motion } from "framer-motion";
 import { createPortal } from "react-dom";
 import type { CSSProperties, ReactNode } from "react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
@@ -118,24 +117,18 @@ export function PopoverMenu({
       </button>
       {typeof document !== "undefined"
         ? createPortal(
-            <AnimatePresence>
-              {open ? (
-                <motion.div
-                  ref={panelRef}
-                  className={cn(
-                    "fixed z-[80] max-h-[420px] w-72 overflow-y-auto rounded-card border border-surface-darkBorder bg-surface-darkElevated/98 p-2 shadow-glow backdrop-blur-xl",
-                    panelClassName
-                  )}
-                  style={position}
-                  initial={{ opacity: 0, y: placement === "top" ? 6 : -6, scale: 0.98 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  exit={{ opacity: 0, y: placement === "top" ? 6 : -6, scale: 0.98 }}
-                  transition={{ duration: 0.14 }}
-                >
-                  {typeof children === "function" ? children(close) : children}
-                </motion.div>
-              ) : null}
-            </AnimatePresence>,
+            open ? (
+              <div
+                ref={panelRef}
+                className={cn(
+                  "fixed z-[80] max-h-[420px] w-72 overflow-y-auto rounded-card border border-surface-darkBorder bg-surface-darkElevated/98 p-2 shadow-glow backdrop-blur-xl transition duration-150",
+                  panelClassName
+                )}
+                style={position}
+              >
+                {typeof children === "function" ? children(close) : children}
+              </div>
+            ) : null,
             document.body
           )
         : null}

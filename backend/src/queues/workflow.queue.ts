@@ -15,12 +15,16 @@ export class WorkflowQueue implements OnModuleDestroy {
     this.queue = new Queue(WORKFLOW_QUEUE, { connection: this.connection });
   }
 
-  addRun(workflowRunId: string, userId: string) {
-    return this.queue.add("run", { workflowRunId, userId }, { jobId: workflowRunId, attempts: 1, removeOnComplete: 100, removeOnFail: 100 });
+  addRun(workflowRunId: string, userId: string, jobId = workflowRunId) {
+    return this.queue.add("run", { workflowRunId, userId }, { jobId, attempts: 1, removeOnComplete: 100, removeOnFail: 100 });
   }
 
   /** alias */
   enqueue(workflowRunId: string, userId: string) { return this.addRun(workflowRunId, userId); }
+
+  enqueueResume(workflowRunId: string, userId: string) {
+    return this.addRun(workflowRunId, userId, `${workflowRunId}:resume:${Date.now()}`);
+  }
 
   async onModuleDestroy() {
     await this.queue.close();

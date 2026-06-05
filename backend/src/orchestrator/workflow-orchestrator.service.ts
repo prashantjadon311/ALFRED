@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
 import { ObjectId } from "mongodb";
 import { WorkflowEventType } from "../contracts/workflow-event.types";
-import { WorkflowDsl } from "../contracts/workflow-dsl.types";
+import { WorkflowDsl, WorkflowDslEdge, WorkflowDslNode } from "../contracts/workflow-dsl.types";
 import { BudgetService } from "../modules/budget/budget.service";
 import { RealtimeEventBus } from "../modules/realtime/realtime-event-bus.service";
 import { UsageService } from "../modules/usage/usage.service";
@@ -26,6 +26,70 @@ import { RequirementDriftService } from "./requirement-drift.service";
 import { AgentPromptBuilderService } from "./agent-prompt-builder.service";
 import { WorkflowContextBuilderService } from "./workflow-context-builder.service";
 import { CritiqueResolutionService } from "./critique-resolution.service";
+
+export interface WorkflowTraversalState {
+  iteration: number;
+  maxIterations: number;
+  previousOutputs: unknown[];
+  lastCriticOutput?: any;
+  lastCriticIssues: Array<{ severity?: string }>;
+  openBlockingIssues: Array<{ severity?: string }>;
+  openIssueDocs: any[];
+  taskType?: string;
+  completed: boolean;
+  finalArtifactCreated: boolean;
+}
+
+export function getNode(dsl: WorkflowDsl, nodeKey: string) {
+  return dsl.nodes.find((node) => node.key === nodeKey);
+}
+
+export function getOutgoingEdges(dsl: WorkflowDsl, nodeKey: string) {
+  return dsl.edges.filter((edge) => edge.from === nodeKey);
+}
+
+export function findStartNode(dsl: WorkflowDsl) {
+  const requirementLock = dsl.nodes.find((node) => node.type === "requirement_lock");
+  if (requirementLock) return requirementLock;
+  const incoming = new Set(dsl.edges.map((edge) => edge.to));
+  return dsl.nodes.find((node) => !incoming.has(node.key));
+}
+
+export function evaluateEdgeCondition(edge: WorkflowDslEdge, state: Pick<WorkflowTraversalState, "iteration" | "maxIterations" | "lastCriticOutput" | "lastCriticIssues" | "openBlockingIssues" | "taskType">) {
+  if (!edge.condition) return true;
+  switch (edge.condition.type) {
+    case "has_issue_severity": {
+      const severities = edge.condition.severityIn ?? [];
+      return state.lastCriticIssues.some((issue) => issue.severity ? severities.includes(issue.severity as any) : false);
+    }
+    case "iteration_remaining":
+      return state.iteration < state.maxIterations;
+    case "critic_approved": {
+      const verdict = String(state.lastCriticOutput?.verdict ?? "").toLowerCase();
+      return state.openBlockingIssues.length === 0 && (verdict === "approved" || !hasSeverity(state.lastCriticIssues, ["BLOCKER", "HIGH"]));
+    }
+    case "task_type_in":
+      return Boolean(state.taskType && (edge.condition.values ?? []).includes(state.taskType));
+    default:
+      return false;
+  }
+}
+
+export function selectNextEdge(dsl: WorkflowDsl, nodeKey: string, state: WorkflowTraversalState) {
+  return getOutgoingEdges(dsl, nodeKey).find((edge) => evaluateEdgeCondition(edge, state));
+}
+
+export function shouldRequestHumanReviewForMaxIteration(currentNode: WorkflowDslNode, nextEdge: WorkflowDslEdge, state: Pick<WorkflowTraversalState, "iteration" | "maxIterations" | "openBlockingIssues">) {
+  return (currentNode.type === "critic" || currentNode.key === "claude_critic") && nextEdge.to !== "final_output" && state.openBlockingIssues.length > 0 && state.iteration >= state.maxIterations;
+}
+
+function hasSeverity(issues: Array<{ severity?: string }>, severities: string[]) {
+  return issues.some((issue) => issue.severity ? severities.includes(issue.severity) : false);
+}
+
+function shouldExitProcessing(status?: string) {
+  return Boolean(status && ["paused", "stopped", "failed", "completed", "needs_human_review"].includes(status));
+}
 
 @Injectable()
 export class WorkflowOrchestratorService {
@@ -78,96 +142,185 @@ export class WorkflowOrchestratorService {
     const userId = new ObjectId(userIdString);
     const runId = new ObjectId(workflowRunId);
     const run = await this.runs.findById(runId, userId);
-    if (!run || ["completed", "running"].includes(run.status)) return run;
+    if (!run || run.status === "running" || shouldExitProcessing(run.status)) return run;
     const dsl = run.workflowDslSnapshot;
     const requirement = run.requirementContractSnapshot as any;
-    await this.runs.updateStatus(runId, userId, "running", { startedAt: new Date() });
+    const startedAt = run.startedAt ?? new Date();
+    await this.runs.updateStatus(runId, userId, "running", { startedAt });
     await this.emit(userId, runId, "run.started", { projectId: run.projectId, message: "Workflow started", data: { status: "running" } });
     await this.emit(userId, runId, "run.running", { projectId: run.projectId, data: { status: "running" } });
 
-    const previousOutputs: unknown[] = [];
-    await this.executeNode(userId, runId, run, dsl, "requirement_lock", requirement, previousOutputs);
-    await this.edge(userId, runId, run.projectId, "e1", "requirement_lock", "chatgpt_designer");
-    await this.executeNode(userId, runId, run, dsl, "chatgpt_designer", requirement, previousOutputs);
-    await this.edge(userId, runId, run.projectId, "e2", "chatgpt_designer", "gemini_architect");
-    await this.executeNode(userId, runId, run, dsl, "gemini_architect", requirement, previousOutputs);
-    await this.edge(userId, runId, run.projectId, "e3", "gemini_architect", "consensus_builder");
-    await this.executeNode(userId, runId, run, dsl, "consensus_builder", requirement, previousOutputs);
-    await this.edge(userId, runId, run.projectId, "e4", "consensus_builder", "claude_critic");
+    const state: WorkflowTraversalState = {
+      iteration: run.iteration ?? 1,
+      maxIterations: run.maxIterations,
+      previousOutputs: [],
+      lastCriticIssues: [],
+      openBlockingIssues: [],
+      openIssueDocs: [],
+      taskType: requirement.taskType,
+      completed: false,
+      finalArtifactCreated: false
+    };
 
-    let iteration = 1;
-    while (iteration <= run.maxIterations) {
-      await this.emit(userId, runId, "workflow.loop.started", { projectId: run.projectId, data: { iteration } });
-      const critic = await this.executeNode(userId, runId, { ...run, iteration } as WorkflowRunDoc, dsl, "claude_critic", requirement, previousOutputs);
-      const parsed = this.parser.parse<any>(critic.output ?? "{}");
-      const criticOutput = parsed.ok ? parsed.value : { verdict: "needs_revision", issues: [{ title: "Structured parse failed", severity: "HIGH", affectedArea: "critic", recommendation: "Retry critic output" }], requirementDriftDetected: false };
-      await this.runs.updateById(runId, userId, { claudeVerdict: criticOutput.summary ?? criticOutput.verdict, iteration } as any);
-      const drift = this.drift.check({ ...requirement, output: critic.output ?? "" });
-      if (criticOutput.requirementDriftDetected || drift.driftDetected) {
-        await this.emit(userId, runId, "workflow.drift_detected", { projectId: run.projectId, data: drift });
-        const approval = await this.approvals.create({ userId, projectId: run.projectId, workflowRunId: runId, type: "requirement_drift_override", status: "pending", title: "Requirement drift detected", description: drift.reason, payload: drift, requestedBy: "claude_critic", createdAt: new Date() } as any);
-        await this.emit(userId, runId, "approval.required", { projectId: run.projectId, data: { approvalRequestId: approval!._id!.toHexString(), type: "requirement_drift_override" } });
-        await this.runs.updateStatus(runId, userId, "needs_human_review", { stopReason: "requirement_drift" });
-        return;
-      }
-      const issueDocs = [];
-      for (const issue of criticOutput.issues ?? []) {
-        const saved = await this.issues.create({ userId, workflowRunId: runId, iteration, title: issue.title, severity: issue.severity, affectedArea: issue.affectedArea, recommendation: issue.recommendation, status: "open", sourceAgent: "claude_critic", createdAt: new Date() } as any);
-        issueDocs.push(saved);
-        await this.emit(userId, runId, "critique.issue.created", { projectId: run.projectId, nodeKey: "claude_critic", data: issue });
-      }
-      if (issueDocs.length) await this.emit(userId, runId, "critique.issues_found", { projectId: run.projectId, data: { count: issueDocs.length } });
-      if (!this.resolver.hasBlockingIssues(criticOutput.issues ?? [])) {
-        await this.edge(userId, runId, run.projectId, "e7", "claude_critic", "final_output");
-        const final = await this.executeNode(userId, runId, { ...run, iteration } as WorkflowRunDoc, dsl, "final_output", requirement, previousOutputs);
-        const finalArtifact = this.parser.parse<any>(final.output ?? "{}");
-        const artifactData = finalArtifact.ok ? finalArtifact.value : { title: "Final Output", type: "markdown", content: final.output ?? "", metadata: {} };
-        const artifact = await this.artifacts.create({ userId, workspaceId: run.workspaceId, projectId: run.projectId, workflowRunId: runId, title: artifactData.title, type: artifactData.type, content: artifactData.content, metadata: artifactData.metadata, createdAt: new Date() } as any);
-        const version = await this.versions.create({ userId, workspaceId: run.workspaceId, artifactId: artifact!._id!, workflowRunId: runId, version: 1, title: artifactData.title, content: artifactData.content, createdAt: new Date() } as any);
-        await this.artifacts.updateById(artifact!._id!, userId, { currentVersionId: version!._id } as any);
-        await this.emit(userId, runId, "artifact.created", { projectId: run.projectId, data: { artifactId: artifact!._id!.toHexString(), type: artifactData.type } });
-        await this.emit(userId, runId, "artifact.version.created", { projectId: run.projectId, data: { artifactId: artifact!._id!.toHexString(), versionId: version!._id!.toHexString(), version: 1 } });
-        if (["software", "mixed"].includes(requirement.taskType)) {
-          await this.edge(userId, runId, run.projectId, "e8", "final_output", "codex_prompt_generator");
-          const codex = await this.executeNode(userId, runId, { ...run, iteration } as WorkflowRunDoc, dsl, "codex_prompt_generator", requirement, previousOutputs);
-          const bundle = this.parser.parse<any>(codex.output ?? "{}");
-          const data = bundle.ok ? bundle.value : { title: "Codex Prompt Bundle", type: "codex_prompt_bundle", content: codex.output ?? "", metadata: {} };
-          const codexArtifact = await this.artifacts.create({ userId, workspaceId: run.workspaceId, projectId: run.projectId, workflowRunId: runId, title: data.title, type: "codex_prompt_bundle", content: data.content, metadata: data.metadata, createdAt: new Date() } as any);
-          const codexVersion = await this.versions.create({ userId, workspaceId: run.workspaceId, artifactId: codexArtifact!._id!, workflowRunId: runId, version: 1, title: data.title, content: data.content, sourceExecutionId: codex._id, createdAt: new Date() } as any);
-          await this.artifacts.updateById(codexArtifact!._id!, userId, { currentVersionId: codexVersion!._id } as any);
-          await this.emit(userId, runId, "artifact.created", { projectId: run.projectId, data: { artifactId: codexArtifact!._id!.toHexString(), type: "codex_prompt_bundle" } });
-          await this.emit(userId, runId, "artifact.version.created", { projectId: run.projectId, data: { artifactId: codexArtifact!._id!.toHexString(), versionId: codexVersion!._id!.toHexString(), version: 1 } });
-        }
-        await this.runs.updateStatus(runId, userId, "completed", { completedAt: new Date(), stopReason: "critic_approved" });
-        await this.emit(userId, runId, "run.completed", { projectId: run.projectId, data: { status: "completed" } });
-        return;
-      }
-      if (iteration >= run.maxIterations) break;
-      await this.edge(userId, runId, run.projectId, "e5", "claude_critic", "issue_resolver");
-      const resolver = await this.executeNode(userId, runId, { ...run, iteration } as WorkflowRunDoc, dsl, "issue_resolver", requirement, previousOutputs);
-      await this.issues.markFixed(runId, userId);
-      await this.patches.create({ userId, workflowRunId: runId, iteration, issueIds: issueDocs.map((doc: any) => doc._id), patchSummary: resolver.output ?? "", fixedByAgents: ["issue_resolver"], verificationStatus: "pending", createdAt: new Date() } as any);
-      await this.emit(userId, runId, "revision.patch.created", { projectId: run.projectId, nodeKey: "issue_resolver", data: { iteration } });
-      await this.emit(userId, runId, "workflow.loop.completed", { projectId: run.projectId, data: { iteration } });
-      const nextIteration = iteration + 1;
-      await this.edge(userId, runId, run.projectId, "e6", "issue_resolver", "chatgpt_designer");
-      await this.executeNode(userId, runId, { ...run, iteration: nextIteration } as WorkflowRunDoc, dsl, "chatgpt_designer", requirement, previousOutputs);
-      await this.edge(userId, runId, run.projectId, "e2", "chatgpt_designer", "gemini_architect");
-      await this.executeNode(userId, runId, { ...run, iteration: nextIteration } as WorkflowRunDoc, dsl, "gemini_architect", requirement, previousOutputs);
-      await this.edge(userId, runId, run.projectId, "e3", "gemini_architect", "consensus_builder");
-      await this.executeNode(userId, runId, { ...run, iteration: nextIteration } as WorkflowRunDoc, dsl, "consensus_builder", requirement, previousOutputs);
-      await this.edge(userId, runId, run.projectId, "e4", "consensus_builder", "claude_critic");
-      iteration = nextIteration;
+    let currentNode: WorkflowDslNode | undefined = run.currentNodeKey ? getNode(dsl, run.currentNodeKey) : findStartNode(dsl);
+    if (!currentNode) {
+      await this.requestHumanReview(userId, runId, run, state, "no_start_node", "Workflow has no executable start node.");
+      return;
     }
-    const approval = await this.approvals.create({ userId, projectId: run.projectId, workflowRunId: runId, type: "final_output_approval", status: "pending", title: "Workflow needs human review", description: "Max iterations reached with unresolved issues.", requestedBy: "workflow_orchestrator", createdAt: new Date() } as any);
+
+    while (currentNode && !state.completed) {
+      const beforeNode = await this.runs.findById(runId, userId);
+      if (!beforeNode || shouldExitProcessing(beforeNode.status)) return beforeNode;
+      if (currentNode.type === "critic" || currentNode.key === "claude_critic") {
+        await this.emit(userId, runId, "workflow.loop.started", { projectId: beforeNode.projectId, data: { iteration: state.iteration } });
+      }
+
+      let execution;
+      try {
+        execution = await this.executeNode(userId, runId, { ...beforeNode, iteration: state.iteration } as WorkflowRunDoc, dsl, currentNode.key, requirement, state.previousOutputs);
+      } catch {
+        return;
+      }
+
+      const afterExecution = await this.runs.findById(runId, userId);
+      if (!afterExecution || shouldExitProcessing(afterExecution.status)) return afterExecution;
+
+      if (currentNode.type === "critic" || currentNode.key === "claude_critic") {
+        const stopped = await this.handleCriticNode(userId, runId, afterExecution, currentNode, execution, requirement, state);
+        if (stopped) return;
+      } else if (currentNode.type === "resolver" || currentNode.key === "issue_resolver") {
+        await this.handleResolverNode(userId, runId, afterExecution, currentNode, execution, state);
+      } else if (currentNode.type === "final_output") {
+        await this.createFinalArtifact(userId, runId, afterExecution, execution);
+        state.finalArtifactCreated = true;
+      } else if (currentNode.type === "codex_prompt_generator") {
+        await this.createCodexArtifact(userId, runId, afterExecution, execution);
+      }
+
+      const afterNode = await this.runs.findById(runId, userId);
+      if (!afterNode || shouldExitProcessing(afterNode.status)) return afterNode;
+
+      const nextEdge = selectNextEdge(dsl, currentNode.key, state);
+      if (!nextEdge) {
+        if (state.finalArtifactCreated || currentNode.type === "codex_prompt_generator") {
+          await this.completeRun(userId, runId, afterNode, state);
+          return;
+        }
+        await this.requestHumanReview(userId, runId, afterNode, state, "no_valid_next_edge", `No valid next edge from ${currentNode.key}.`);
+        return;
+      }
+
+      if (shouldRequestHumanReviewForMaxIteration(currentNode, nextEdge, state)) {
+        await this.requestHumanReview(userId, runId, afterNode, state, "max_iterations", "Max iterations reached with unresolved issues.");
+        return;
+      }
+
+      await this.edge(userId, runId, afterNode.projectId, nextEdge.key, nextEdge.from, nextEdge.to);
+      if ((currentNode.type === "resolver" || currentNode.key === "issue_resolver") && nextEdge.condition?.type === "iteration_remaining") {
+        state.iteration += 1;
+      }
+      currentNode = getNode(dsl, nextEdge.to);
+      if (!currentNode) {
+        await this.requestHumanReview(userId, runId, afterNode, state, "missing_next_node", `Next node ${nextEdge.to} is missing.`);
+        return;
+      }
+    }
+  }
+
+  private async handleCriticNode(userId: ObjectId, runId: ObjectId, run: WorkflowRunDoc, node: WorkflowDslNode, execution: any, requirement: any, state: WorkflowTraversalState) {
+    const parsed = this.parser.parse<any>(execution.output ?? "{}");
+    const criticOutput = parsed.ok ? parsed.value : { verdict: "needs_revision", issues: [{ title: "Structured parse failed", severity: "HIGH", affectedArea: "critic", recommendation: "Retry critic output" }], requirementDriftDetected: false };
+    const issues = criticOutput.issues ?? [];
+    state.lastCriticOutput = criticOutput;
+    state.lastCriticIssues = issues;
+    state.openBlockingIssues = issues.filter((issue: { severity?: string }) => ["BLOCKER", "HIGH"].includes(issue.severity ?? ""));
+    await this.runs.updateById(runId, userId, { claudeVerdict: criticOutput.summary ?? criticOutput.verdict, iteration: state.iteration } as any);
+    const drift = this.drift.check({ ...requirement, output: execution.output ?? "" });
+    if (criticOutput.requirementDriftDetected || drift.driftDetected) {
+      await this.emit(userId, runId, "workflow.drift_detected", { projectId: run.projectId, data: drift });
+      const approval = await this.approvals.create({ userId, projectId: run.projectId, workflowRunId: runId, type: "requirement_drift_override", status: "pending", title: "Requirement drift detected", description: drift.reason, payload: drift, requestedBy: node.key, createdAt: new Date() } as any);
+      await this.emit(userId, runId, "approval.required", { projectId: run.projectId, data: { approvalRequestId: approval!._id!.toHexString(), type: "requirement_drift_override" } });
+      await this.runs.updateStatus(runId, userId, "needs_human_review", { stopReason: "requirement_drift" });
+      state.completed = true;
+      return true;
+    }
+    state.openIssueDocs = [];
+    const existingIssues = await this.issues.collection().find({ userId, workflowRunId: runId, iteration: state.iteration, sourceAgent: node.key } as any).toArray();
+    if (existingIssues.length > 0) {
+      state.openIssueDocs = existingIssues.filter((issue: any) => issue.status === "open");
+    } else {
+      for (const issue of issues) {
+        const saved = await this.issues.create({ userId, workflowRunId: runId, iteration: state.iteration, title: issue.title, severity: issue.severity, affectedArea: issue.affectedArea, recommendation: issue.recommendation, status: "open", sourceAgent: node.key, createdAt: new Date() } as any);
+        state.openIssueDocs.push(saved);
+        await this.emit(userId, runId, "critique.issue.created", { projectId: run.projectId, nodeKey: node.key, data: issue });
+      }
+    }
+    if (state.openIssueDocs.length) await this.emit(userId, runId, "critique.issues_found", { projectId: run.projectId, data: { count: state.openIssueDocs.length } });
+    return false;
+  }
+
+  private async handleResolverNode(userId: ObjectId, runId: ObjectId, run: WorkflowRunDoc, node: WorkflowDslNode, execution: any, state: WorkflowTraversalState) {
+    const existingPatch = await this.patches.collection().findOne({ userId, workflowRunId: runId, iteration: state.iteration, fixedByAgents: node.key } as any);
+    if (existingPatch) {
+      state.openIssueDocs = [];
+      state.openBlockingIssues = [];
+      return;
+    }
+    await this.issues.markFixed(runId, userId);
+    await this.patches.create({ userId, workflowRunId: runId, iteration: state.iteration, issueIds: state.openIssueDocs.map((doc: any) => doc._id), patchSummary: execution.output ?? "", fixedByAgents: [node.key], verificationStatus: "pending", createdAt: new Date() } as any);
+    await this.emit(userId, runId, "revision.patch.created", { projectId: run.projectId, nodeKey: node.key, data: { iteration: state.iteration } });
+    await this.emit(userId, runId, "workflow.loop.completed", { projectId: run.projectId, data: { iteration: state.iteration } });
+    state.openIssueDocs = [];
+    state.openBlockingIssues = [];
+  }
+
+  private async createFinalArtifact(userId: ObjectId, runId: ObjectId, run: WorkflowRunDoc, execution: any) {
+    const finalArtifact = this.parser.parse<any>(execution.output ?? "{}");
+    const artifactData = finalArtifact.ok ? finalArtifact.value : { title: "Final Output", type: "markdown", content: execution.output ?? "", metadata: {} };
+    const existing = await this.artifacts.collection().findOne({ userId, workspaceId: run.workspaceId, workflowRunId: runId, type: artifactData.type } as any);
+    if (existing) return;
+    const artifact = await this.artifacts.create({ userId, workspaceId: run.workspaceId, projectId: run.projectId, workflowRunId: runId, title: artifactData.title, type: artifactData.type, content: artifactData.content, metadata: artifactData.metadata, createdAt: new Date() } as any);
+    const version = await this.versions.create({ userId, workspaceId: run.workspaceId, artifactId: artifact!._id!, workflowRunId: runId, version: 1, title: artifactData.title, content: artifactData.content, createdAt: new Date() } as any);
+    await this.artifacts.updateById(artifact!._id!, userId, { currentVersionId: version!._id } as any);
+    await this.emit(userId, runId, "artifact.created", { projectId: run.projectId, data: { artifactId: artifact!._id!.toHexString(), type: artifactData.type } });
+    await this.emit(userId, runId, "artifact.version.created", { projectId: run.projectId, data: { artifactId: artifact!._id!.toHexString(), versionId: version!._id!.toHexString(), version: 1 } });
+  }
+
+  private async createCodexArtifact(userId: ObjectId, runId: ObjectId, run: WorkflowRunDoc, execution: any) {
+    const bundle = this.parser.parse<any>(execution.output ?? "{}");
+    const data = bundle.ok ? bundle.value : { title: "Codex Prompt Bundle", type: "codex_prompt_bundle", content: execution.output ?? "", metadata: {} };
+    const existing = await this.artifacts.collection().findOne({ userId, workspaceId: run.workspaceId, workflowRunId: runId, type: "codex_prompt_bundle" } as any);
+    if (existing) return;
+    const codexArtifact = await this.artifacts.create({ userId, workspaceId: run.workspaceId, projectId: run.projectId, workflowRunId: runId, title: data.title, type: "codex_prompt_bundle", content: data.content, metadata: data.metadata, createdAt: new Date() } as any);
+    const codexVersion = await this.versions.create({ userId, workspaceId: run.workspaceId, artifactId: codexArtifact!._id!, workflowRunId: runId, version: 1, title: data.title, content: data.content, sourceExecutionId: execution._id, createdAt: new Date() } as any);
+    await this.artifacts.updateById(codexArtifact!._id!, userId, { currentVersionId: codexVersion!._id } as any);
+    await this.emit(userId, runId, "artifact.created", { projectId: run.projectId, data: { artifactId: codexArtifact!._id!.toHexString(), type: "codex_prompt_bundle" } });
+    await this.emit(userId, runId, "artifact.version.created", { projectId: run.projectId, data: { artifactId: codexArtifact!._id!.toHexString(), versionId: codexVersion!._id!.toHexString(), version: 1 } });
+  }
+
+  private async completeRun(userId: ObjectId, runId: ObjectId, run: WorkflowRunDoc, state: WorkflowTraversalState) {
+    await this.runs.updateStatus(runId, userId, "completed", { completedAt: new Date(), stopReason: "critic_approved" });
+    await this.emit(userId, runId, "run.completed", { projectId: run.projectId, data: { status: "completed", iteration: state.iteration } });
+    state.completed = true;
+  }
+
+  private async requestHumanReview(userId: ObjectId, runId: ObjectId, run: WorkflowRunDoc, state: WorkflowTraversalState, stopReason: string, description: string) {
+    const approval = await this.approvals.create({ userId, projectId: run.projectId, workflowRunId: runId, type: "final_output_approval", status: "pending", title: "Workflow needs human review", description, requestedBy: "workflow_orchestrator", createdAt: new Date() } as any);
     await this.emit(userId, runId, "approval.required", { projectId: run.projectId, data: { approvalRequestId: approval!._id!.toHexString(), type: "final_output_approval" } });
-    await this.runs.updateStatus(runId, userId, "needs_human_review", { stopReason: "max_iterations" });
-    await this.emit(userId, runId, "run.needs_human_review", { projectId: run.projectId, data: { iteration } });
+    await this.runs.updateStatus(runId, userId, "needs_human_review", { stopReason });
+    await this.emit(userId, runId, "run.needs_human_review", { projectId: run.projectId, data: { iteration: state.iteration, stopReason } });
+    state.completed = true;
   }
 
   private async executeNode(userId: ObjectId, runId: ObjectId, run: WorkflowRunDoc, dsl: WorkflowDsl, nodeKey: string, requirement: any, previousOutputs: unknown[]) {
     const node = dsl.nodes.find((item) => item.key === nodeKey)!;
     await this.runs.updateById(runId, userId, { currentNodeKey: nodeKey, iteration: run.iteration } as any);
+    const idempotencyKey = `${runId.toHexString()}:${nodeKey}:${run.iteration}`;
+    const existingExecution = await this.executions.collection().findOne({ userId, workflowRunId: runId, idempotencyKey, status: "completed" } as any);
+    if (existingExecution) {
+      previousOutputs.push({ nodeKey, output: existingExecution.output });
+      return Object.assign(existingExecution, { __reused: true });
+    }
     await this.emit(userId, runId, "node.status.changed", { projectId: run.projectId, nodeKey, data: { status: "running", iteration: run.iteration } });
     const memory = await this.memory.findByProject(userId, run.projectId);
     const fresh = await this.runs.findById(runId, userId);
@@ -211,7 +364,7 @@ export class WorkflowOrchestratorService {
       latencyMs: output.latencyMs,
       errorMessage: parsed.ok ? undefined : "structured_parse_failed",
       attempt: 1,
-      idempotencyKey: `${runId.toHexString()}:${nodeKey}:${run.iteration}`,
+      idempotencyKey,
       startedAt: started,
       completedAt: new Date(),
       createdAt: started

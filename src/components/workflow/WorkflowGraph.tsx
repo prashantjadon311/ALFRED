@@ -3,7 +3,9 @@
 import { Background, Controls, MarkerType, MiniMap, ReactFlow, type Edge, type Node } from "@xyflow/react";
 import { useMemo } from "react";
 import { agentNodes } from "@/lib/mock-data";
+import type { AgentNode } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import type { WorkflowGraphEdge } from "@/services/workflow-service";
 import { useWorkflowStore } from "@/store/workflow-store";
 import { AgentNodeCard } from "./AgentNodeCard";
 import { WorkflowCanvasToolbar } from "./WorkflowCanvasToolbar";
@@ -24,6 +26,10 @@ const positions: Record<string, { x: number; y: number }> = {
   "codex-prompt-generator": { x: 2640, y: -150 },
   "export-artifact": { x: 2640, y: 120 }
 };
+
+function nodePosition(id: string) {
+  return positions[id] ?? positions[id.replace(/_/g, "-")] ?? { x: 0, y: 0 };
+}
 
 const edgeBase = {
   type: "smoothstep",
@@ -57,23 +63,43 @@ const baseEdges: Edge[] = [
 export function WorkflowGraph({
   compact = false,
   fill = false,
-  showFullScreenToggle = false
+  showFullScreenToggle = false,
+  workflowNodes,
+  workflowEdges,
+  activeNodeId
 }: {
   compact?: boolean;
   fill?: boolean;
   showFullScreenToggle?: boolean;
+  workflowNodes?: AgentNode[];
+  workflowEdges?: WorkflowGraphEdge[];
+  activeNodeId?: string;
 }) {
   const selectedNodeId = useWorkflowStore((state) => state.selectedNodeId);
   const setSelectedNodeId = useWorkflowStore((state) => state.setSelectedNodeId);
+  const sourceNodes = workflowNodes?.length ? workflowNodes : agentNodes;
   const nodes: Node[] = useMemo(
     () =>
-      agentNodes.map((agent) => ({
+      sourceNodes.map((agent) => ({
         id: agent.id,
         type: "agentNode",
-        position: positions[agent.id] ?? { x: 0, y: 0 },
+        position: nodePosition(agent.id),
         data: { agent, selected: selectedNodeId === agent.id }
       })),
-    [selectedNodeId]
+    [selectedNodeId, sourceNodes]
+  );
+  const edges: Edge[] = useMemo(
+    () =>
+      workflowEdges?.length
+        ? workflowEdges.map((edge) => ({
+            id: edge.id,
+            source: edge.source,
+            target: edge.target,
+            label: edge.label,
+            ...(edge.source === activeNodeId || edge.target === activeNodeId ? activeEdge : edgeBase)
+          }))
+        : baseEdges,
+    [activeNodeId, workflowEdges]
   );
 
   return (
@@ -88,7 +114,7 @@ export function WorkflowGraph({
       <WorkflowCanvasToolbar showFullScreenToggle={showFullScreenToggle} />
       <ReactFlow
         nodes={nodes}
-        edges={baseEdges}
+        edges={edges}
         nodeTypes={nodeTypes}
         fitView
         minZoom={0.25}

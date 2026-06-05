@@ -20,6 +20,7 @@ const createSchema = z.object({
 });
 const updateSchema = createSchema.partial();
 const runSchema = z.object({ projectId: z.string() });
+const validateSchema = z.object({ workflowDsl: z.unknown().optional() }).default({});
 
 @UseGuards(JwtAuthGuard)
 @Controller("workflows")
@@ -63,10 +64,15 @@ export class WorkflowsController {
   }
 
   @Post(":id/validate")
-  async validate(@CurrentUser() u: RequestUser, @Headers("x-workspace-id") workspaceHeader: string | undefined, @Param("id") id: string) {
+  async validate(
+    @CurrentUser() u: RequestUser,
+    @Headers("x-workspace-id") workspaceHeader: string | undefined,
+    @Param("id") id: string,
+    @Body(zodPipe(validateSchema)) body: z.infer<typeof validateSchema>
+  ) {
     const userId = toObjectId(u.userId, "userId");
     const workspaceId = await this.scope.resolve(userId, workspaceHeader);
-    return ok(await this.service.validate(userId, workspaceId, toObjectId(id)));
+    return ok(await this.service.validate(userId, workspaceId, toObjectId(id), body.workflowDsl));
   }
 
   @Post(":id/run")

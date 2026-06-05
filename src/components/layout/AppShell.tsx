@@ -6,8 +6,6 @@ import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import { AiPageLoader } from "@/components/shared/AiPageLoader";
-import { Button } from "@/components/shared/Button";
-import { useChatStore } from "@/store/chat-store";
 import { useUiStore } from "@/store/ui-store";
 import { AppSidebar } from "./AppSidebar";
 
@@ -24,7 +22,6 @@ export function AppShell({ children }: { children: ReactNode }) {
   const setCommandPaletteOpen = useUiStore((state) => state.setCommandPaletteOpen);
   const setMobileSidebarOpen = useUiStore((state) => state.setMobileSidebarOpen);
   const toggleMobileSidebar = useUiStore((state) => state.toggleMobileSidebar);
-  const createChat = useChatStore((state) => state.createChat);
   const [initialLoading, setInitialLoading] = useState(true);
 
   useEffect(() => {
@@ -53,7 +50,9 @@ export function AppShell({ children }: { children: ReactNode }) {
       }
       if (meta && event.key.toLowerCase() === "n") {
         event.preventDefault();
-        createChat("New agent session");
+        void import("@/store/chat-store").then(({ useChatStore }) => {
+          useChatStore.getState().createChat("New agent session");
+        });
       }
       if (event.key === "Escape") {
         setCommandPaletteOpen(false);
@@ -63,7 +62,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [createChat, setCommandPaletteOpen, setFullScreenPage, setMobileSidebarOpen]);
+  }, [setCommandPaletteOpen, setFullScreenPage, setMobileSidebarOpen]);
 
   const isAuthPage = pathname === "/login" || pathname === "/signup";
   const isPlaygroundPage = pathname.startsWith("/playground");
@@ -74,15 +73,14 @@ export function AppShell({ children }: { children: ReactNode }) {
     <div className="flex h-screen overflow-hidden bg-transparent text-slate-100">
       {fullScreenPage ? null : <AppSidebar />}
       {!fullScreenPage ? (
-        <Button
-          size="icon"
-          variant="secondary"
+        <button
+          type="button"
           aria-label="Open navigation"
-          className="fixed left-3 top-3 z-40 md:hidden"
+          className="fixed left-3 top-3 z-40 inline-flex h-9 w-9 items-center justify-center gap-2 rounded-button border border-surface-darkBorder bg-surface-darkElevated/80 p-0 font-medium text-slate-100 transition duration-200 hover:-translate-y-px hover:border-primary/45 hover:bg-surface-darkElevated active:translate-y-0 md:hidden"
           onClick={toggleMobileSidebar}
         >
           <Menu className="h-4 w-4" />
-        </Button>
+        </button>
       ) : null}
       <div className="flex min-w-0 flex-1 flex-col">
         <main
