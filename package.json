@@ -18,6 +18,7 @@
     "indexes": "npm --prefix backend run indexes",
     "test": "npm run typecheck && npm run test:frontend",
     "test:browser": "playwright test",
+    "test:browser:api": "playwright test --config=playwright.api.config.ts",
     "test:frontend": "node scripts/frontend-checks.mjs",
     "test:backend": "npm --prefix backend run test",
     "test:e2e": "npm run dev:infra && npm --prefix backend run test:e2e",

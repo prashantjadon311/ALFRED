@@ -13,7 +13,7 @@ import { WorkspaceScopeService } from "../workspaces/workspace-scope.service";
 const chatSchema = z.object({
   prompt: z.string().min(1).max(100000),
   systemPrompt: z.string().max(20000).optional(),
-  providerType: z.string().default("mock"),
+  providerType: z.string().optional(),
   modelName: z.string().optional(),
   temperature: z.number().min(0).max(2).optional(),
   maxTokens: z.number().min(1).max(128000).optional()
@@ -40,7 +40,7 @@ export class LlmGatewayController {
   @Post("chat")
   async chat(@CurrentUser() u: RequestUser, @Headers("x-workspace-id") workspaceHeader: string | undefined, @Body(zodPipe(chatSchema)) body: z.infer<typeof chatSchema>) {
     const userId = new ObjectId(u.userId);
-    const result = await this.llm.chat({ prompt: body.prompt, systemPrompt: body.systemPrompt, providerType: body.providerType, modelName: body.modelName, nodeKey: "chat" });
+    const result = await this.llm.chat({ prompt: body.prompt, systemPrompt: body.systemPrompt, providerType: body.providerType, modelName: body.modelName, temperature: body.temperature, maxTokens: body.maxTokens, userId: u.userId, nodeKey: "chat" });
     await this.usage.record({
       userId,
       workspaceId: await this.scope.resolve(userId, workspaceHeader),
@@ -60,7 +60,7 @@ export class LlmGatewayController {
     const userId = new ObjectId(u.userId);
     const workspaceId = await this.scope.resolve(userId, workspaceHeader);
     const results = await Promise.all(
-      body.models.map((m) => this.llm.chat({ prompt: body.prompt, systemPrompt: body.systemPrompt, providerType: m.providerType, modelName: m.modelName, nodeKey: "compare" }))
+      body.models.map((m) => this.llm.chat({ prompt: body.prompt, systemPrompt: body.systemPrompt, providerType: m.providerType, modelName: m.modelName, userId: u.userId, nodeKey: "compare" }))
     );
     for (const result of results) {
       await this.usage.record({

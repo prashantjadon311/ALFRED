@@ -3,6 +3,11 @@ export interface ChatInput {
   systemPrompt?: string;
   providerType?: string;
   modelName?: string;
+  userId?: string;
+  baseUrl?: string;
+  encryptedApiKey?: string;
+  temperature?: number;
+  maxTokens?: number;
   nodeKey?: string;
   iteration?: number;
   context?: unknown;
@@ -21,4 +26,4 @@ export interface ChatOutput {
 
 export interface ChatStreamChunk { content: string; done?: boolean; }
 export interface ModelInfo { name: string; contextWindow: number; }
-export interface ProviderHealth { status: "healthy" | "degraded" | "offline"; message?: string; }
+export interface ProviderHealth { status: "healthy" | "degraded" | "offline"; message?: string; checkedAt?: string; }

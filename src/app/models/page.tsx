@@ -1,7 +1,7 @@
 "use client";
 
 import { ShieldCheck } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { GlassCard } from "@/components/shared/GlassCard";
 import { ProviderCard } from "@/components/models/ProviderCard";
 import { ModelTable } from "@/components/models/ModelTable";
@@ -13,7 +13,12 @@ export default function ModelsPage() {
   const models = useModelStore((state) => state.models);
   const updateProviderConfig = useModelStore((state) => state.updateProviderConfig);
   const updateModelConfig = useModelStore((state) => state.updateModelConfig);
+  const loadFromApi = useModelStore((state) => state.loadFromApi);
   const [testMessages, setTestMessages] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    void loadFromApi();
+  }, [loadFromApi]);
 
   return (
     <div>

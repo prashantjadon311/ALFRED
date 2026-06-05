@@ -18,4 +18,12 @@ export class AiModelsService {
     if (!doc) throw new NotFoundException("Model not found");
     return this.repo.serialize(doc);
   }
+
+  async findByName(userId: ObjectId, modelName: string) {
+    return this.repo.collection().findOne({
+      userId,
+      enabled: { $ne: false },
+      $or: [{ name: modelName }, { displayName: modelName }]
+    } as any);
+  }
 }

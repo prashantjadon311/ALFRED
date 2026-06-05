@@ -8,9 +8,12 @@ import { FastifyAdapter, NestFastifyApplication } from "@nestjs/platform-fastify
 import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
 import { AppModule } from "./app.module";
 import { GlobalExceptionFilter } from "./common/filters/global-exception.filter";
+import { assertProductionSecrets } from "./config/production-secret.guard";
 import { redactPaths } from "./security/redaction.util";
 
 async function bootstrap() {
+  assertProductionSecrets();
+
   const adapter = new FastifyAdapter({
     logger: {
       level: process.env.LOG_LEVEL ?? "info",

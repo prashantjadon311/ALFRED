@@ -76,7 +76,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     };
     set((state) => ({ chats: [chat, ...state.chats], activeChatId: id }));
     if (isApiMode()) {
-      void chatService.createChat({ title, projectId: chat.projectId }).then((created) => {
+      const projectId = /^[a-f\d]{24}$/i.test(chat.projectId) ? chat.projectId : undefined;
+      void chatService.createChat({ title, projectId }).then((created) => {
         set((state) => ({
           chats: state.chats.map((item) => item.id === id ? { ...created, messages: [] } : item),
           activeChatId: state.activeChatId === id ? created.id : state.activeChatId,

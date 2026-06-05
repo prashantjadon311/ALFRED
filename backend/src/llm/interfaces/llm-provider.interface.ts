@@ -6,5 +6,5 @@ export interface LlmProvider {
   stream?(input: ChatInput): AsyncIterable<ChatStreamChunk>;
   estimateTokens(input: string): Promise<number>;
   getModels(): Promise<ModelInfo[]>;
-  testConnection(): Promise<ProviderHealth>;
+  testConnection(input?: Partial<ChatInput>): Promise<ProviderHealth>;
 }

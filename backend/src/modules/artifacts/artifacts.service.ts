@@ -44,10 +44,10 @@ export class ArtifactsService {
     if (!existing) throw new NotFoundException("Artifact not found");
     const doc = await this.artifacts.updateByIdForWorkspace(id, userId, workspaceId, body as any);
     if (body.content) {
-      const latestVersion = await this.versions.collection().find({ artifactId: id }).sort({ version: -1 }).limit(1).next();
+      const latestVersion = await this.versions.collection().find({ artifactId: id, userId, workspaceId }).sort({ version: -1 }).limit(1).next();
       const nextVersion = (latestVersion?.version ?? 0) + 1;
       const version = await this.versions.create({ userId, workspaceId, artifactId: id, version: nextVersion, title: body.title ?? existing.title, content: body.content, createdAt: new Date() } as any);
-      await this.artifacts.updateById(id, userId, { currentVersionId: version!._id } as any);
+      await this.artifacts.updateByIdForWorkspace(id, userId, workspaceId, { currentVersionId: version!._id } as any);
     }
     return this.artifacts.serialize(doc);
   }
@@ -60,7 +60,7 @@ export class ArtifactsService {
 
   async getVersions(userId: ObjectId, workspaceId: ObjectId, id: ObjectId) {
     await this.get(userId, workspaceId, id);
-    const docs = await this.versions.collection().find({ artifactId: id, userId }).sort({ version: 1 }).toArray();
+    const docs = await this.versions.collection().find({ artifactId: id, userId, workspaceId }).sort({ version: 1 }).toArray();
     return this.versions.serializeMany(docs);
   }
 

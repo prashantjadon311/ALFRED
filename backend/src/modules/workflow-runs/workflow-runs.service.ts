@@ -57,7 +57,7 @@ export class WorkflowRunsService {
   async getGraphState(userId: ObjectId, workspaceId: ObjectId, id: ObjectId) {
     const run = await this.runs.findByIdForWorkspace(id, userId, workspaceId);
     if (!run) throw new NotFoundException("Workflow run not found");
-    const recentEvents = await this.events.collection().find({ workflowRunId: id }).sort({ createdAt: -1 }).limit(200).toArray();
+    const recentEvents = await this.events.collection().find({ userId, workflowRunId: id }).sort({ createdAt: -1 }).limit(200).toArray();
     const nodeStatuses: Record<string, unknown> = {};
     for (const e of recentEvents.reverse()) {
       if (e.eventType === "node.status.changed" && e.nodeKey) {
@@ -77,7 +77,7 @@ export class WorkflowRunsService {
 
   async getLogs(userId: ObjectId, workspaceId: ObjectId, id: ObjectId, limit: number) {
     await this.assertAccess(id, userId, workspaceId);
-    const evts = await this.events.collection().find({ workflowRunId: id }).sort({ createdAt: 1 }).limit(limit).toArray();
+    const evts = await this.events.collection().find({ userId, workflowRunId: id }).sort({ createdAt: 1 }).limit(limit).toArray();
     return this.events.serializeMany(evts);
   }
 
