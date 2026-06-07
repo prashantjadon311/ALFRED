@@ -8,6 +8,7 @@ import { ArtifactsRepository } from "../../repositories/artifacts.repository";
 import { ChatsRepository } from "../../repositories/chats.repository";
 import { UsageEventsRepository } from "../../repositories/usage-events.repository";
 import { RequirementContractsRepository } from "../../repositories/requirement-contracts.repository";
+import { ProjectMemoryRepository } from "../../repositories/project-memory.repository";
 import { serializeDoc, serializeDocs } from "../../common/utils/object-id";
 
 @Injectable()
@@ -20,11 +21,21 @@ export class ProjectsService {
     private readonly artifacts: ArtifactsRepository,
     private readonly chats: ChatsRepository,
     private readonly usage: UsageEventsRepository,
-    private readonly requirements: RequirementContractsRepository
+    private readonly requirements: RequirementContractsRepository,
+    private readonly memory: ProjectMemoryRepository
   ) {}
 
-  async list(userId: ObjectId, workspaceId: ObjectId, page = 1, limit = 20, status?: string) {
-    const result = await this.projects.listByUserAndWorkspace(userId, workspaceId, status ? ({ status } as any) : ({} as any), { skip: (page - 1) * limit, limit });
+  async list(userId: ObjectId, workspaceId: ObjectId, page = 1, limit = 20, status?: string, search?: string, type?: string) {
+    const filter: Record<string, unknown> = {};
+    if (status) filter.status = status;
+    if (type) filter.type = type;
+    const normalizedSearch = search?.trim();
+    if (normalizedSearch) {
+      const escaped = normalizedSearch.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const pattern = new RegExp(escaped, "i");
+      filter.$or = [{ name: pattern }, { description: pattern }];
+    }
+    const result = await this.projects.listByUserAndWorkspace(userId, workspaceId, filter as any, { skip: (page - 1) * limit, limit });
     return { items: serializeDocs(result.items), total: result.total };
   }
 
@@ -81,6 +92,71 @@ export class ProjectsService {
       artifacts: serializeDocs(artifacts.items),
       linkedChats: serializeDocs(chats.items),
       openIssueCount
+    };
+  }
+
+  async detail(userId: ObjectId, workspaceId: ObjectId, projectId: ObjectId) {
+    const project = await this.projects.findByIdForWorkspace(projectId, userId, workspaceId);
+    if (!project) throw new NotFoundException("Project not found");
+
+    const [requirementContract, projectMemory, chats, runs, activeWorkflowRun, artifacts, usageRows] = await Promise.all([
+      this.requirements.findLatest(userId, projectId),
+      this.memory.findByProject(userId, projectId),
+      this.chats.listByUserAndWorkspace(userId, workspaceId, { projectId } as any, { limit: 20, sort: { updatedAt: -1 } }),
+      this.runs.listByUserAndWorkspace(userId, workspaceId, { projectId } as any, { limit: 20, sort: { updatedAt: -1 } }),
+      this.runs.collection().find({
+        userId,
+        workspaceId,
+        projectId,
+        status: { $in: ["queued", "running", "paused", "needs_human_review"] }
+      } as any).sort({ updatedAt: -1 }).limit(1).next(),
+      this.artifacts.listByUserAndWorkspace(userId, workspaceId, { projectId } as any, { limit: 20, sort: { updatedAt: -1 } }),
+      this.usage.collection().aggregate([
+        { $match: { userId, workspaceId, projectId } },
+        {
+          $group: {
+            _id: "$source",
+            inputTokens: { $sum: "$inputTokens" },
+            outputTokens: { $sum: "$outputTokens" },
+            costUsd: { $sum: "$costUsd" }
+          }
+        },
+        { $sort: { costUsd: -1 } }
+      ]).toArray()
+    ]);
+
+    const runIds = runs.items.map((run) => run._id).filter((id): id is ObjectId => Boolean(id));
+    const [timeline, critiqueIssues] = runIds.length
+      ? await Promise.all([
+          this.events.collection().find({ userId, workflowRunId: { $in: runIds } }).sort({ createdAt: -1 }).limit(50).toArray(),
+          this.issues.collection().find({ userId, workflowRunId: { $in: runIds } }).sort({ createdAt: -1 }).toArray()
+        ])
+      : [[], []];
+
+    const usageSummary = {
+      inputTokens: usageRows.reduce((sum, row) => sum + Number(row.inputTokens ?? 0), 0),
+      outputTokens: usageRows.reduce((sum, row) => sum + Number(row.outputTokens ?? 0), 0),
+      totalTokens: usageRows.reduce((sum, row) => sum + Number(row.inputTokens ?? 0) + Number(row.outputTokens ?? 0), 0),
+      costUsd: usageRows.reduce((sum, row) => sum + Number(row.costUsd ?? 0), 0),
+      bySource: usageRows.map((row) => ({
+        source: String(row._id ?? "project"),
+        inputTokens: Number(row.inputTokens ?? 0),
+        outputTokens: Number(row.outputTokens ?? 0),
+        costUsd: Number(row.costUsd ?? 0)
+      }))
+    };
+
+    return {
+      project: serializeDoc(project),
+      requirementContract: serializeDoc(requirementContract),
+      projectMemory: serializeDoc(projectMemory),
+      linkedChats: serializeDocs(chats.items),
+      workflowRuns: serializeDocs(runs.items),
+      activeWorkflowRun: serializeDoc(activeWorkflowRun),
+      critiqueIssues: serializeDocs(critiqueIssues),
+      artifacts: serializeDocs(artifacts.items),
+      timeline: serializeDocs(timeline),
+      usageSummary
     };
   }
 

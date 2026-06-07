@@ -58,13 +58,11 @@ export function AppSidebar() {
   const toggleSidebar = useUiStore((state) => state.toggleSidebar);
   const setMobileSidebarOpen = useUiStore((state) => state.setMobileSidebarOpen);
   const setCommandPaletteOpen = useUiStore((state) => state.setCommandPaletteOpen);
-  const setPageLoading = useUiStore((state) => state.setPageLoading);
 
   const closeMobile = () => setMobileSidebarOpen(false);
   const handleNewChat = () => {
     void import("@/store/chat-store").then(({ useChatStore }) => {
       useChatStore.getState().createChat("New agent session");
-      setPageLoading(true);
       router.push("/playground");
       closeMobile();
     });

@@ -12,11 +12,11 @@ const UserMenuPanel = dynamic(() => import("./UserMenuPanel").then((mod) => mod.
 });
 
 export function UserMenu({ collapsed = false }: { collapsed?: boolean }) {
-  const user = useAuthStore((state) => state.user);
+  const userName = useAuthStore((state) => state.user?.name ?? "Prashant");
 
   const avatar = (
     <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-gradient-to-br from-primary to-success text-sm font-bold text-white">
-      {(user?.name ?? "P").slice(0, 1)}
+      {userName.slice(0, 1)}
     </span>
   );
 
@@ -35,12 +35,12 @@ export function UserMenu({ collapsed = false }: { collapsed?: boolean }) {
           <span className={cn("flex items-center gap-3 rounded-card border border-surface-darkBorder bg-surface-darkElevated/55 p-2.5 transition hover:border-primary/40 hover:bg-surface-darkElevated", open && "border-primary/40 bg-primary/10")}>
             {avatar}
             <span className="min-w-0 flex-1">
-              <span className="block truncate text-sm font-semibold text-white">{user?.name ?? "Prashant"}</span>
+              <span className="block truncate text-sm font-semibold text-white">{userName}</span>
               <span className="block truncate text-xs text-primary-soft">Pro Workspace</span>
             </span>
           </span>
         );
-        return collapsed ? <Tooltip label={user?.name ?? "User"}>{content}</Tooltip> : content;
+        return collapsed ? <Tooltip label={userName}>{content}</Tooltip> : content;
       }}
     >
       {(close) => <UserMenuPanel close={close} />}

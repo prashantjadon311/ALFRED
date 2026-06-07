@@ -21,6 +21,12 @@ export class WorkflowRunsController {
     return list(res.items, { page: Number(page), limit: Number(limit), total: res.total, hasMore: Number(page) * Number(limit) < res.total });
   }
 
+  @Get(":id/detail")
+  async detail(@CurrentUser() u: RequestUser, @Headers("x-workspace-id") workspaceHeader: string | undefined, @Param("id") id: string) {
+    const userId = toObjectId(u.userId, "userId");
+    return ok(await this.service.getDetail(userId, await this.scope.resolve(userId, workspaceHeader), toObjectId(id)));
+  }
+
   @Get(":id")
   async get(@CurrentUser() u: RequestUser, @Headers("x-workspace-id") workspaceHeader: string | undefined, @Param("id") id: string) {
     const userId = toObjectId(u.userId, "userId");

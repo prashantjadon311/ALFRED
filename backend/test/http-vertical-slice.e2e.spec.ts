@@ -123,6 +123,14 @@ describe("A.L.F.R.E.D. HTTP vertical slice", () => {
       })
       .expect(201);
 
+    const memoryBullets = ["Keep requirement locking enabled.", "Generate a Codex prompt bundle."];
+    await authed().patch(`/projects/${projectId}/memory`).send({ bullets: memoryBullets }).expect(200);
+
+    const linkedChat = await authed()
+      .post("/chats")
+      .send({ title: "Project Detail Integration Chat", projectId })
+      .expect(201);
+
     await authed()
       .patch(`/requirement-contracts/${contract.body.data.id}`)
       .send({ lockedGoal: "Replace the locked goal with a different product direction." })
@@ -199,6 +207,30 @@ describe("A.L.F.R.E.D. HTTP vertical slice", () => {
     const usage = await authed().get("/usage/summary").expect(200);
     expect(usage.body.data.totalTokens).toBeGreaterThan(0);
     expect(usage.body.data.costUsd).toBeGreaterThan(0);
+
+    const detail = await authed().get(`/projects/${projectId}/detail`).expect(200);
+    expect(detail.body.meta).toEqual({});
+    expect(detail.body.data.project.id).toBe(projectId);
+    expect(detail.body.data.requirementContract.id).toBe(contract.body.data.id);
+    expect(detail.body.data.projectMemory.bullets).toEqual(memoryBullets);
+    expect(detail.body.data.linkedChats.map((chat: { id: string }) => chat.id)).toContain(linkedChat.body.data.id);
+    expect(detail.body.data.workflowRuns.map((workflowRun: { id: string }) => workflowRun.id)).toContain(workflowRunId);
+    expect(detail.body.data.activeWorkflowRun).toBeNull();
+    expect(detail.body.data.critiqueIssues.length).toBeGreaterThan(0);
+    expect(detail.body.data.artifacts.length).toBeGreaterThan(0);
+    expect(detail.body.data.timeline.length).toBeGreaterThan(0);
+    expect(detail.body.data.usageSummary.totalTokens).toBeGreaterThan(0);
+    expect(detail.body.data.usageSummary.costUsd).toBeGreaterThan(0);
+    expect(detail.body.data.usageSummary.bySource.length).toBeGreaterThan(0);
+
+    const otherAuth = await request(app.getHttpServer())
+      .post("/auth/register")
+      .send({ name: "Project Detail Intruder", email: `project-detail-${Date.now()}@alfred.local`, password: "password123" })
+      .expect(201);
+    await request(app.getHttpServer())
+      .get(`/projects/${projectId}/detail`)
+      .set("Authorization", `Bearer ${otherAuth.body.data.accessToken}`)
+      .expect(404);
 
     const workflowRunObjectId = new ObjectId(workflowRunId);
     const ownerObjectId = new ObjectId(userId);

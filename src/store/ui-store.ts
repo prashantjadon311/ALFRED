@@ -35,7 +35,7 @@ export const useUiStore = create<UiStore>((set) => ({
   activeRightPanel: null,
   commandPaletteOpen: false,
   fullScreenPage: null,
-  pageLoading: true,
+  pageLoading: false,
   setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
   toggleSidebar: () => set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
   setMobileSidebarOpen: (open) => set({ mobileSidebarOpen: open }),

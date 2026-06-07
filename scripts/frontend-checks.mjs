@@ -89,4 +89,51 @@ assert.equal(active[0].active, false);
 assert.equal(active[1].active, true);
 assert.equal(getVisibleWorkspaces([{ ...workspace, archived: true }, updated]).length, 1);
 
+const {
+  addWorkflowNode,
+  connectWorkflowNodes,
+  deleteWorkflowNode,
+  resetWorkflowDsl,
+  serializeWorkflowDsl,
+  setWorkflowNodePosition,
+  updateWorkflowNode
+} = loadTs("src/lib/workflow-editor.ts");
+const baseDsl = {
+  version: "1.0",
+  name: "Editor checks",
+  nodes: [
+    { key: "requirement_lock", type: "requirement_lock", title: "Requirement Lock" },
+    { key: "critic", type: "critic", title: "Critic" },
+    { key: "final_output", type: "final_output", title: "Final Output" }
+  ],
+  edges: [
+    { key: "edge_requirement_lock_critic", from: "requirement_lock", to: "critic" },
+    { key: "edge_critic_final_output", from: "critic", to: "final_output" }
+  ],
+  stopConditions: {
+    maxIterations: 3,
+    stopOnBudgetExceeded: true,
+    stopOnRequirementDrift: true,
+    stopOnUserStop: true
+  }
+};
+const firstAdded = addWorkflowNode(baseDsl, "ai_agent", { x: 100, y: 200 });
+const secondAdded = addWorkflowNode(firstAdded.dsl, "ai_agent", { x: 430, y: 200 });
+assert.equal(firstAdded.node.key, "ai_agent");
+assert.equal(secondAdded.node.key, "ai_agent_2");
+const connected = connectWorkflowNodes(secondAdded.dsl, "ai_agent", "critic");
+assert.equal(connected.edge.from, "ai_agent");
+assert.ok(connectWorkflowNodes(connected.dsl, "ai_agent", "critic").error);
+const edited = updateWorkflowNode(connected.dsl, "ai_agent", { title: "Planner" });
+assert.equal(edited.nodes.find((node) => node.key === "ai_agent").title, "Planner");
+const positioned = setWorkflowNodePosition(edited, "ai_agent", { x: 700, y: 320 });
+assert.deepEqual(positioned.nodes.find((node) => node.key === "ai_agent").config.ui.position, { x: 700, y: 320 });
+const deleted = deleteWorkflowNode(positioned, "critic");
+assert.ok(!deleted.dsl.nodes.some((node) => node.key === "critic"));
+assert.ok(!deleted.dsl.edges.some((edge) => edge.from === "critic" || edge.to === "critic"));
+const reset = resetWorkflowDsl(baseDsl);
+reset.name = "Changed copy";
+assert.equal(baseDsl.name, "Editor checks");
+assert.deepEqual(JSON.parse(serializeWorkflowDsl(baseDsl)), baseDsl);
+
 console.log("Frontend confidence checks passed.");

@@ -5,19 +5,22 @@ import { AppLink } from "@/components/shared/AppLink";
 import { Button } from "@/components/shared/Button";
 import { GlassCard } from "@/components/shared/GlassCard";
 import { StatusBadge } from "@/components/shared/StatusBadge";
-import { projectTasks, projects } from "@/lib/mock-data";
 import { formatDate } from "@/lib/utils";
-
-const summary = [
-  { label: "Total tasks", value: projectTasks.length, icon: Bot },
-  { label: "Running", value: projectTasks.filter((task) => task.status === "Running").length, icon: TimerReset },
-  { label: "Completed", value: projectTasks.filter((task) => task.status === "Completed").length, icon: CheckCircle2 },
-  { label: "Failed", value: projectTasks.filter((task) => task.status === "Failed").length, icon: ShieldAlert },
-  { label: "Waiting approval", value: projectTasks.filter((task) => task.status === "Waiting Approval").length, icon: Clock3 },
-  { label: "Paused", value: projectTasks.filter((task) => task.status === "Paused").length, icon: PauseCircle }
-];
+import { useProjectStore } from "@/store/project-store";
 
 export function ProjectTaskDashboard() {
+  const projectTasks = useProjectStore((state) => state.projectTasks);
+  const projects = useProjectStore((state) => state.projects);
+  const summary = [
+    { label: "Total tasks", value: projectTasks.length, icon: Bot },
+    { label: "Running", value: projectTasks.filter((task) => task.status === "Running").length, icon: TimerReset },
+    { label: "Completed", value: projectTasks.filter((task) => task.status === "Completed").length, icon: CheckCircle2 },
+    { label: "Failed", value: projectTasks.filter((task) => task.status === "Failed").length, icon: ShieldAlert },
+    { label: "Waiting approval", value: projectTasks.filter((task) => task.status === "Waiting Approval").length, icon: Clock3 },
+    { label: "Paused", value: projectTasks.filter((task) => task.status === "Paused").length, icon: PauseCircle }
+  ];
+  const projectNames = new Map(projects.map((project) => [project.id, project.name]));
+
   return (
     <section className="space-y-3">
       <div className="flex items-center justify-between gap-3">
@@ -61,11 +64,10 @@ export function ProjectTaskDashboard() {
             </thead>
             <tbody className="divide-y divide-surface-darkBorder bg-surface-darkCard/70">
               {projectTasks.map((task) => {
-                const project = projects.find((item) => item.id === task.projectId);
                 return (
                   <tr key={task.id} className="hover:bg-white/5">
                     <td className="px-3 py-4 font-semibold text-white">{task.title}</td>
-                    <td className="px-3 py-4 text-slate-300">{project?.name ?? task.projectId}</td>
+                    <td className="px-3 py-4 text-slate-300">{projectNames.get(task.projectId) ?? task.projectId}</td>
                     <td className="px-3 py-4 capitalize text-slate-300">{task.type}</td>
                     <td className="px-3 py-4"><StatusBadge status={task.status} /></td>
                     <td className="px-3 py-4 text-slate-300">{task.owner}</td>

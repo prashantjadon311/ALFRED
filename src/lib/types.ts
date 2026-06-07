@@ -51,6 +51,7 @@ export interface AgentNode {
 export interface WorkflowRun {
   id: string;
   projectId: string;
+  workflowId?: string;
   name: string;
   status: WorkflowStatus;
   currentNodeId: string;

@@ -1,28 +1,23 @@
 import { agentNodes as mockNodes, workflows as mockWorkflows } from "@/lib/mocks/workflows";
 import { api, isApiMode } from "@/lib/api-client";
 import type { AgentNode, AgentStatus, Severity, WorkflowRun, WorkflowStatus } from "@/lib/types";
+import type { WorkflowDsl } from "@/types/workflow-dsl";
 import { demoWait } from "./mock-latency";
 
 const wait = () => demoWait(120);
-
-type WorkflowDslPayload = {
-  version: "1.0";
-  name: string;
-  nodes: Array<Record<string, unknown> & { key: string; type: string; title: string }>;
-  edges: Array<Record<string, unknown> & { key: string; from: string; to: string }>;
-  stopConditions: {
-    maxIterations: number;
-    stopOnBudgetExceeded: boolean;
-    stopOnRequirementDrift: boolean;
-    stopOnUserStop: boolean;
-  };
-};
+const MOCK_WORKFLOW_STORAGE_KEY = "alfred_mock_workflow_templates";
 
 export type WorkflowTemplate = WorkflowRun & {
   description?: string;
-  workflowDsl?: WorkflowDslPayload;
+  workflowDsl?: WorkflowDsl;
   maxTokens?: number;
   maxCostUsd?: number;
+};
+
+export type WorkflowListParams = {
+  page?: number;
+  limit?: number;
+  projectId?: string;
 };
 
 export type WorkflowGraphEdge = {
@@ -70,29 +65,37 @@ export type WorkflowArtifactRecord = {
   createdAt?: string;
 };
 
-type WorkflowSaveInput = {
+export type WorkflowRunDetail = {
+  run: WorkflowRun;
+  graphState: WorkflowGraphState;
+  logs: WorkflowEventRecord[];
+  issues: WorkflowIssueRecord[];
+  artifacts: WorkflowArtifactRecord[];
+};
+
+export type WorkflowSaveInput = {
   name: string;
   description?: string;
   projectId?: string;
-  workflowDsl: WorkflowDslPayload;
+  workflowDsl: WorkflowDsl;
   maxIterations?: number;
   maxTokens?: number;
   maxCostUsd?: number;
 };
 
-export function buildAgentStudioWorkflowDsl(name = "Agent Studio Workflow"): WorkflowDslPayload {
+export function buildAgentStudioWorkflowDsl(name = "Agent Studio Workflow"): WorkflowDsl {
   return {
     version: "1.0",
     name,
     nodes: [
-      { key: "requirement_lock", type: "requirement_lock", title: "Requirement Lock", config: {} },
-      { key: "chatgpt_designer", type: "ai_agent", title: "ChatGPT Designer", agentRole: "product_designer", providerPreference: "openai", modelPreference: "GPT-5", promptTemplateKey: "chatgpt_designer_v1", budget: { maxTokens: 8000, maxCostUsd: 1 } },
-      { key: "gemini_architect", type: "ai_agent", title: "Gemini Architect", agentRole: "software_architect", providerPreference: "gemini", promptTemplateKey: "gemini_architect_v1" },
-      { key: "consensus_builder", type: "consensus", title: "Consensus Builder", promptTemplateKey: "consensus_builder_v1" },
-      { key: "claude_critic", type: "critic", title: "Claude Critic", agentRole: "critic", providerPreference: "anthropic", promptTemplateKey: "claude_critic_v1" },
-      { key: "issue_resolver", type: "resolver", title: "Issue Resolver", promptTemplateKey: "issue_resolver_v1" },
-      { key: "final_output", type: "final_output", title: "Final Output Generator", promptTemplateKey: "final_output_v1" },
-      { key: "codex_prompt_generator", type: "codex_prompt_generator", title: "Codex Prompt Generator", promptTemplateKey: "codex_prompt_generator_v1" }
+      { key: "requirement_lock", type: "requirement_lock", title: "Requirement Lock", config: { ui: { position: { x: 0, y: 0 } } } },
+      { key: "chatgpt_designer", type: "ai_agent", title: "ChatGPT Designer", agentRole: "product_designer", providerPreference: "openai", modelPreference: "GPT-5", promptTemplateKey: "chatgpt_designer_v1", budget: { maxTokens: 8000, maxCostUsd: 1 }, config: { temperature: 0.4, maxTokens: 8000, retryCount: 2, ui: { position: { x: 330, y: -120 } } } },
+      { key: "gemini_architect", type: "ai_agent", title: "Gemini Architect", agentRole: "software_architect", providerPreference: "gemini", promptTemplateKey: "gemini_architect_v1", config: { temperature: 0.3, maxTokens: 8000, retryCount: 2, ui: { position: { x: 330, y: 150 } } } },
+      { key: "consensus_builder", type: "consensus", title: "Consensus Builder", promptTemplateKey: "consensus_builder_v1", config: { ui: { position: { x: 660, y: 0 } } } },
+      { key: "claude_critic", type: "critic", title: "Claude Critic", agentRole: "critic", providerPreference: "anthropic", promptTemplateKey: "claude_critic_v1", config: { temperature: 0.2, maxTokens: 8000, retryCount: 2, ui: { position: { x: 990, y: 0 } } } },
+      { key: "issue_resolver", type: "resolver", title: "Issue Resolver", promptTemplateKey: "issue_resolver_v1", config: { ui: { position: { x: 1320, y: -120 } } } },
+      { key: "final_output", type: "final_output", title: "Final Output Generator", promptTemplateKey: "final_output_v1", config: { ui: { position: { x: 1320, y: 150 } } } },
+      { key: "codex_prompt_generator", type: "codex_prompt_generator", title: "Codex Prompt Generator", promptTemplateKey: "codex_prompt_generator_v1", config: { ui: { position: { x: 1650, y: 150 } } } }
     ],
     edges: [
       { key: "e1", from: "requirement_lock", to: "chatgpt_designer" },
@@ -106,6 +109,31 @@ export function buildAgentStudioWorkflowDsl(name = "Agent Studio Workflow"): Wor
     ],
     stopConditions: { maxIterations: 3, stopOnBudgetExceeded: true, stopOnRequirementDrift: true, stopOnUserStop: true }
   };
+}
+
+function defaultMockTemplates(): WorkflowTemplate[] {
+  return mockWorkflows.map((workflow) => ({
+    ...workflow,
+    workflowDsl: buildAgentStudioWorkflowDsl(workflow.name),
+    maxTokens: 100000,
+    maxCostUsd: 5
+  }));
+}
+
+function readMockTemplates(): WorkflowTemplate[] {
+  if (typeof window === "undefined") return defaultMockTemplates();
+  try {
+    const stored = window.localStorage.getItem(MOCK_WORKFLOW_STORAGE_KEY);
+    return stored ? JSON.parse(stored) as WorkflowTemplate[] : defaultMockTemplates();
+  } catch {
+    return defaultMockTemplates();
+  }
+}
+
+function writeMockTemplates(workflows: WorkflowTemplate[]) {
+  if (typeof window !== "undefined") {
+    window.localStorage.setItem(MOCK_WORKFLOW_STORAGE_KEY, JSON.stringify(workflows));
+  }
 }
 
 function patchRun(id: string, patch: Partial<WorkflowRun>): WorkflowRun {
@@ -141,6 +169,7 @@ function normalizeRun(run: any): WorkflowRun {
   return {
     id: run.id,
     projectId: run.projectId,
+    workflowId: run.workflowId,
     name: run.name ?? run.workflowDslSnapshot?.name ?? "A.L.F.R.E.D. Workflow Run",
     status: status(run.status),
     currentNodeId: run.currentNodeKey ?? "requirement-lock",
@@ -216,7 +245,7 @@ function normalizeArtifact(artifact: any): WorkflowArtifactRecord {
 }
 
 function normalizeWorkflow(workflow: any): WorkflowTemplate {
-  const workflowDsl = (workflow.workflowDsl ?? buildAgentStudioWorkflowDsl(workflow.name)) as WorkflowDslPayload;
+  const workflowDsl = (workflow.workflowDsl ?? buildAgentStudioWorkflowDsl(workflow.name)) as WorkflowDsl;
   return {
     id: workflow.id,
     projectId: workflow.projectId ?? "",
@@ -237,29 +266,57 @@ function normalizeWorkflow(workflow: any): WorkflowTemplate {
   };
 }
 
+function normalizeWorkflowGraphState(id: string, graph: any): WorkflowGraphState {
+  const dsl = graph.dsl ?? graph.run?.workflowDslSnapshot;
+  const run = normalizeRun(graph.run ?? {
+    id,
+    status: graph.status,
+    currentNodeKey: graph.currentNodeKey,
+    iteration: graph.iteration,
+    maxIterations: dsl?.stopConditions?.maxIterations,
+    totalInputTokens: graph.totalInputTokens,
+    totalOutputTokens: graph.totalOutputTokens,
+    totalCostUsd: graph.totalCostUsd,
+    claudeVerdict: graph.run?.claudeVerdict
+  });
+  const activeNodeId = graph.currentNodeKey ?? graph.run?.currentNodeKey;
+  return {
+    run,
+    nodes: (graph.nodes ?? dsl?.nodes ?? []).map((node: any) => normalizeGraphNode(node, activeNodeId)),
+    edges: (graph.edges ?? dsl?.edges ?? []).map(normalizeGraphEdge),
+    events: (graph.events ?? []).map(normalizeEvent),
+    activeNodeId,
+    nodeStatuses: graph.nodeStatuses ?? {}
+  };
+}
+
 export const workflowService = {
-  listWorkflows: async (): Promise<WorkflowTemplate[]> => {
-    if (isApiMode()) return (await api.get<any[]>("/workflows")).map(normalizeWorkflow);
+  listWorkflows: async (params: WorkflowListParams = {}): Promise<WorkflowTemplate[]> => {
+    if (isApiMode()) {
+      const query = new URLSearchParams();
+      if (params.page) query.set("page", String(params.page));
+      if (params.limit) query.set("limit", String(params.limit));
+      if (params.projectId) query.set("projectId", params.projectId);
+      const suffix = query.toString();
+      return (await api.get<any[]>(`/workflows${suffix ? `?${suffix}` : ""}`)).map(normalizeWorkflow);
+    }
     await wait();
-    return mockWorkflows.map((workflow) => ({
-      ...workflow,
-      workflowDsl: buildAgentStudioWorkflowDsl(workflow.name),
-      maxTokens: 100000,
-      maxCostUsd: 5
-    }));
+    const workflows = readMockTemplates().filter((workflow) => !params.projectId || workflow.projectId === params.projectId);
+    return params.limit ? workflows.slice(0, params.limit) : workflows;
   },
 
   getWorkflow: async (id: string): Promise<WorkflowTemplate> => {
     if (isApiMode()) return normalizeWorkflow(await api.get<any>(`/workflows/${id}`));
     await wait();
-    const workflow = mockWorkflows.find((item) => item.id === id) ?? mockWorkflows[0];
-    return { ...workflow, workflowDsl: buildAgentStudioWorkflowDsl(workflow.name), maxTokens: 100000, maxCostUsd: 5 };
+    const workflow = readMockTemplates().find((item) => item.id === id);
+    if (!workflow) throw new Error("Workflow not found.");
+    return workflow;
   },
 
   createWorkflow: async (input: WorkflowSaveInput): Promise<WorkflowTemplate> => {
     if (isApiMode()) return normalizeWorkflow(await api.post<any>("/workflows", input));
     await wait();
-    return {
+    const workflow: WorkflowTemplate = {
       id: `workflow-${Date.now()}`,
       projectId: input.projectId ?? "",
       name: input.name,
@@ -277,12 +334,15 @@ export const workflowService = {
       maxTokens: input.maxTokens,
       maxCostUsd: input.maxCostUsd
     };
+    const workflows = [workflow, ...readMockTemplates()];
+    writeMockTemplates(workflows);
+    return workflow;
   },
 
   updateWorkflow: async (id: string, input: WorkflowSaveInput): Promise<WorkflowTemplate> => {
     if (isApiMode()) return normalizeWorkflow(await api.patch<any>(`/workflows/${id}`, input));
     await wait();
-    return {
+    const workflow: WorkflowTemplate = {
       id,
       projectId: input.projectId ?? "",
       name: input.name,
@@ -300,10 +360,15 @@ export const workflowService = {
       maxTokens: input.maxTokens,
       maxCostUsd: input.maxCostUsd
     };
+    const workflows = readMockTemplates();
+    writeMockTemplates(workflows.some((item) => item.id === id)
+      ? workflows.map((item) => item.id === id ? workflow : item)
+      : [workflow, ...workflows]);
+    return workflow;
   },
 
-  validateWorkflow: async (id: string, workflowDsl?: WorkflowDslPayload): Promise<{ valid: boolean; dsl?: WorkflowDslPayload }> => {
-    if (isApiMode()) return api.post<{ valid: boolean; dsl?: WorkflowDslPayload }>(`/workflows/${id}/validate`, workflowDsl ? { workflowDsl } : {});
+  validateWorkflow: async (id: string, workflowDsl?: WorkflowDsl): Promise<{ valid: boolean; dsl?: WorkflowDsl }> => {
+    if (isApiMode()) return api.post<{ valid: boolean; dsl?: WorkflowDsl }>(`/workflows/${id}/validate`, workflowDsl ? { workflowDsl } : {});
     await wait();
     return { valid: true, dsl: workflowDsl ?? buildAgentStudioWorkflowDsl() };
   },
@@ -334,27 +399,7 @@ export const workflowService = {
   getWorkflowRunGraphState: async (id: string): Promise<WorkflowGraphState> => {
     if (isApiMode()) {
       const graph = await api.get<any>(`/workflow-runs/${id}/graph-state`);
-      const dsl = graph.dsl ?? graph.run?.workflowDslSnapshot;
-      const run = normalizeRun(graph.run ?? {
-        id,
-        status: graph.status,
-        currentNodeKey: graph.currentNodeKey,
-        iteration: graph.iteration,
-        maxIterations: dsl?.stopConditions?.maxIterations,
-        totalInputTokens: graph.totalInputTokens,
-        totalOutputTokens: graph.totalOutputTokens,
-        totalCostUsd: graph.totalCostUsd,
-        claudeVerdict: graph.run?.claudeVerdict
-      });
-      const activeNodeId = graph.currentNodeKey ?? graph.run?.currentNodeKey;
-      return {
-        run,
-        nodes: (graph.nodes ?? dsl?.nodes ?? []).map((node: any) => normalizeGraphNode(node, activeNodeId)),
-        edges: (graph.edges ?? dsl?.edges ?? []).map(normalizeGraphEdge),
-        events: (graph.events ?? []).map(normalizeEvent),
-        activeNodeId,
-        nodeStatuses: graph.nodeStatuses ?? {}
-      };
+      return normalizeWorkflowGraphState(id, graph);
     }
     await wait();
     const run = mockWorkflows.find((workflow) => workflow.id === id) ?? mockWorkflows[0];
@@ -371,6 +416,37 @@ export const workflowService = {
   getWorkflowGraphState: async (id: string) => workflowService.getWorkflowRunGraphState(id),
 
   getGraphState: async (id: string) => workflowService.getWorkflowGraphState(id),
+
+  getWorkflowRunDetail: async (id: string): Promise<WorkflowRunDetail> => {
+    if (isApiMode()) {
+      const detail = await api.get<any>(`/workflow-runs/${id}/detail`);
+      return {
+        run: normalizeRun(detail.run ?? detail.graphState?.run ?? { id }),
+        graphState: normalizeWorkflowGraphState(id, detail.graphState ?? {}),
+        logs: (detail.logs ?? []).map(normalizeEvent),
+        issues: (detail.issues ?? []).map(normalizeIssue),
+        artifacts: (detail.artifacts ?? []).map(normalizeArtifact)
+      };
+    }
+    await wait();
+    const run = mockWorkflows.find((workflow) => workflow.id === id) ?? mockWorkflows[0];
+    return {
+      run,
+      graphState: {
+        run,
+        nodes: mockNodes,
+        edges: [],
+        events: [],
+        activeNodeId: run.currentNodeId,
+        nodeStatuses: Object.fromEntries(mockNodes.map((node) => [node.id, node.status]))
+      },
+      logs: [],
+      issues: [],
+      artifacts: []
+    };
+  },
+
+  getRunDetail: async (id: string) => workflowService.getWorkflowRunDetail(id),
 
   getWorkflowRunEvents: async (id: string): Promise<WorkflowEventRecord[]> => {
     if (isApiMode()) return (await api.get<any[]>(`/workflow-runs/${id}/events?limit=200`)).map(normalizeEvent);

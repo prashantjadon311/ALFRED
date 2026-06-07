@@ -19,17 +19,32 @@ const updateProjectSchema = createProjectSchema.partial().extend({
   progress: z.number().min(0).max(100).optional()
 });
 
+function positiveIntParam(value: string | undefined, fallback: number) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
+}
+
 @UseGuards(JwtAuthGuard)
 @Controller("projects")
 export class ProjectsController {
   constructor(private readonly service: ProjectsService, private readonly scope: WorkspaceScopeService) {}
 
   @Get()
-  async list(@CurrentUser() user: RequestUser, @Headers("x-workspace-id") workspaceHeader: string | undefined, @Query("page") page = "1", @Query("limit") limit = "20", @Query("status") status?: string) {
+  async list(
+    @CurrentUser() user: RequestUser,
+    @Headers("x-workspace-id") workspaceHeader: string | undefined,
+    @Query("page") pageParam?: string,
+    @Query("limit") limitParam?: string,
+    @Query("search") search?: string,
+    @Query("status") status?: string,
+    @Query("type") type?: string
+  ) {
+    const page = positiveIntParam(pageParam, 1);
+    const limit = Math.min(positiveIntParam(limitParam, 20), 100);
     const userId = toObjectId(user.userId, "userId");
     const workspaceId = await this.scope.resolve(userId, workspaceHeader);
-    const result = await this.service.list(userId, workspaceId, Number(page), Number(limit), status);
-    return list(result.items, { page: Number(page), limit: Number(limit), total: result.total, hasMore: Number(page) * Number(limit) < result.total });
+    const result = await this.service.list(userId, workspaceId, page, limit, status, search, type);
+    return list(result.items, { page, limit, total: result.total, hasMore: page * limit < result.total });
   }
 
   @Post()
@@ -37,6 +52,13 @@ export class ProjectsController {
     const userId = toObjectId(user.userId, "userId");
     const workspaceId = await this.scope.resolve(userId, workspaceHeader);
     return ok(await this.service.create(userId, workspaceId, body));
+  }
+
+  @Get(":id/detail")
+  async detail(@CurrentUser() user: RequestUser, @Headers("x-workspace-id") workspaceHeader: string | undefined, @Param("id") id: string) {
+    const userId = toObjectId(user.userId, "userId");
+    const workspaceId = await this.scope.resolve(userId, workspaceHeader);
+    return ok(await this.service.detail(userId, workspaceId, toObjectId(id)));
   }
 
   @Get(":id")

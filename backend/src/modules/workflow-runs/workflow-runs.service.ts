@@ -66,6 +66,27 @@ export class WorkflowRunsService {
   async getGraphState(userId: ObjectId, workspaceId: ObjectId, id: ObjectId) {
     const run = await this.runs.findByIdForWorkspace(id, userId, workspaceId);
     if (!run) throw new NotFoundException("Workflow run not found");
+    return this.buildGraphState(run, userId, id);
+  }
+
+  async getDetail(userId: ObjectId, workspaceId: ObjectId, id: ObjectId) {
+    const run = await this.assertAccess(id, userId, workspaceId);
+    const [graphState, logs, issues, artifacts] = await Promise.all([
+      this.buildGraphState(run, userId, id),
+      this.events.collection().find({ userId, workflowRunId: id }).sort({ createdAt: 1 }).limit(200).toArray(),
+      this.issues.listByRun(id, userId),
+      this.artifacts.collection().find({ workflowRunId: id, userId, workspaceId }).toArray()
+    ]);
+    return {
+      run: this.runs.serialize(run),
+      graphState,
+      logs: this.events.serializeMany(logs),
+      issues: this.issues.serializeMany(issues),
+      artifacts: this.artifacts.serializeMany(artifacts)
+    };
+  }
+
+  private async buildGraphState(run: any, userId: ObjectId, id: ObjectId) {
     const recentEvents = await this.events.collection().find({ userId, workflowRunId: id }).sort({ createdAt: -1 }).limit(200).toArray();
     const nodeStatuses: Record<string, unknown> = {};
     for (const e of recentEvents.reverse()) {
@@ -74,7 +95,7 @@ export class WorkflowRunsService {
       }
     }
     const dsl = run.workflowDslSnapshot;
-    const nodes = dsl.nodes.map((node) => ({
+    const nodes = dsl.nodes.map((node: any) => ({
       ...node,
       status: nodeStatuses[node.key] ?? (node.key === run.currentNodeKey ? "running" : "pending")
     }));

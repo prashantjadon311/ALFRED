@@ -1,10 +1,11 @@
 import { create } from "zustand";
-import { projects as mockProjects, projectMemory as mockProjectMemory } from "@/lib/mock-data";
+import { projectTasks as mockProjectTasks, projects as mockProjects } from "@/lib/mocks/projects";
 import { projectService } from "@/services/project-service";
-import type { Project } from "@/lib/types";
+import type { Project, ProjectTask } from "@/lib/types";
 
 interface ProjectStore {
   projects: Project[];
+  projectTasks: ProjectTask[];
   activeProjectId: string;
   projectMemory: string[];
   loaded: boolean;
@@ -15,10 +16,13 @@ interface ProjectStore {
   loadFromApi: () => Promise<void>;
 }
 
+const PROJECT_LIST_LIMIT = 100;
+
 export const useProjectStore = create<ProjectStore>((set, get) => ({
   projects: mockProjects,
+  projectTasks: mockProjectTasks,
   activeProjectId: mockProjects[0]?.id ?? "",
-  projectMemory: mockProjectMemory,
+  projectMemory: [],
   loaded: false,
 
   setActiveProjectId: (projectId) => set({ activeProjectId: projectId }),
@@ -38,10 +42,8 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   loadFromApi: async () => {
     if (get().loaded) return;
     try {
-      const projects = await projectService.listProjects();
-      if (projects.length > 0) {
-        set({ projects, activeProjectId: projects[0].id, loaded: true });
-      }
+      const projects = await projectService.listProjects({ page: 1, limit: PROJECT_LIST_LIMIT });
+      set({ projects, activeProjectId: projects[0]?.id ?? "", loaded: true });
     } catch { /* keep mock data */ }
   }
 }));

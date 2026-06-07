@@ -6,7 +6,7 @@ import { Button } from "@/components/shared/Button";
 import { GlassCard } from "@/components/shared/GlassCard";
 import { MetricCard } from "@/components/shared/MetricCard";
 import { BudgetProgress } from "@/components/usage/BudgetProgress";
-import { budgetRules, providerCosts, usageSeries } from "@/lib/mock-data";
+import { budgetRules, providerCosts, usageSeries } from "@/lib/mocks/billing";
 import { formatCurrency, formatTokens } from "@/lib/utils";
 import { useWorkspaceStore } from "@/store/workspace-store";
 

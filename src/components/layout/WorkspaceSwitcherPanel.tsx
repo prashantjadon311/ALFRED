@@ -3,7 +3,6 @@
 import { Building2, Check, CreditCard, Keyboard, Plus, Settings } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useMemo } from "react";
-import { useUiStore } from "@/store/ui-store";
 import { useWorkspaceStore } from "@/store/workspace-store";
 
 export function WorkspaceSwitcherPanel({ close, onNavigate }: { close: () => void; onNavigate?: () => void }) {
@@ -11,12 +10,10 @@ export function WorkspaceSwitcherPanel({ close, onNavigate }: { close: () => voi
   const allWorkspaces = useWorkspaceStore((state) => state.workspaces);
   const activeWorkspaceId = useWorkspaceStore((state) => state.activeWorkspaceId);
   const setActiveWorkspace = useWorkspaceStore((state) => state.setActiveWorkspace);
-  const setPageLoading = useUiStore((state) => state.setPageLoading);
   const workspaces = useMemo(() => allWorkspaces.filter((workspace) => !workspace.archived), [allWorkspaces]);
   const activeWorkspace = workspaces.find((workspace) => workspace.id === activeWorkspaceId) ?? workspaces[0];
 
   const navigate = (path: string) => {
-    setPageLoading(true);
     router.push(path);
     close();
     onNavigate?.();

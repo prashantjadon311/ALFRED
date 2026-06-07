@@ -27,6 +27,9 @@ export class RequirementContractsRepository extends BaseRepository<RequirementCo
   findCurrent(userId: ObjectId, projectId: ObjectId) {
     return this.collection().findOne({ userId, projectId, locked: true }, { sort: { version: -1 } });
   }
+  findLatest(userId: ObjectId, projectId: ObjectId) {
+    return this.collection().findOne({ userId, projectId }, { sort: { version: -1 } });
+  }
   async patchContract(id: ObjectId, userId: ObjectId, patch: Partial<RequirementContractDoc>) {
     const current = await this.findById(id, userId);
     if (current?.locked && ("originalRequirement" in patch || "lockedGoal" in patch)) {

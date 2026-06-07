@@ -12,17 +12,14 @@ export function UserMenuPanel({ close }: { close: () => void }) {
   const logout = useAuthStore((state) => state.logout);
   const theme = useUiStore((state) => state.theme);
   const toggleTheme = useUiStore((state) => state.toggleTheme);
-  const setPageLoading = useUiStore((state) => state.setPageLoading);
   const activeWorkspaceId = useWorkspaceStore((state) => state.activeWorkspaceId);
 
   const signOut = async () => {
     await logout();
-    setPageLoading(true);
     router.replace("/login");
   };
 
   const navigate = (path: string) => {
-    setPageLoading(true);
     router.push(path);
     close();
   };

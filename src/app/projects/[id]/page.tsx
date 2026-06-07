@@ -1,9 +1,9 @@
 "use client";
 
-import { CircleDollarSign, Download, LockKeyhole, MessageSquareWarning, Pause, Play, Rocket, WandSparkles } from "lucide-react";
+import { CircleDollarSign, Download, LockKeyhole, MessageSquareWarning, Pause, Play, Rocket, Square, WandSparkles } from "lucide-react";
 import dynamic from "next/dynamic";
-import { notFound } from "next/navigation";
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { EmptyState } from "@/components/shared/EmptyState";
 import { Button } from "@/components/shared/Button";
 import { GlassCard } from "@/components/shared/GlassCard";
 import { MetricCard } from "@/components/shared/MetricCard";
@@ -13,8 +13,12 @@ import { CritiquePanel } from "@/components/projects/CritiquePanel";
 import { ExecutionTimeline } from "@/components/projects/ExecutionTimeline";
 import { ProjectMemoryPanel } from "@/components/projects/ProjectMemoryPanel";
 import { RequirementContractCard } from "@/components/projects/RequirementContractCard";
-import { artifacts, chats, critiqueIssues, projectMemory, projects, requirementContract, workflows } from "@/lib/mock-data";
+import type { ProjectDetailData } from "@/lib/mocks/project-detail";
+import type { Artifact } from "@/lib/types";
 import { formatCurrency, formatTokens } from "@/lib/utils";
+import { artifactService } from "@/services/artifact-service";
+import { projectService } from "@/services/project-service";
+import { workflowService } from "@/services/workflow-service";
 
 const WorkflowGraph = dynamic(() => import("@/components/workflow/WorkflowGraph").then((mod) => mod.WorkflowGraph), {
   ssr: false,
@@ -23,13 +27,112 @@ const WorkflowGraph = dynamic(() => import("@/components/workflow/WorkflowGraph"
 
 export default function ProjectDetailPage({ params }: { params: { id: string } }) {
   const [notice, setNotice] = useState("");
-  const project = projects.find((item) => item.id === params.id);
-  if (!project) notFound();
-  const projectChats = chats.filter((chat) => chat.projectId === project.id).slice(0, 3);
-  const projectWorkflows = workflows.filter((workflow) => workflow.projectId === project.id);
+  const [detail, setDetail] = useState<ProjectDetailData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [apiError, setApiError] = useState("");
+  const [pendingAction, setPendingAction] = useState("");
+
+  const loadDetail = useCallback(async (showLoading = false) => {
+    if (showLoading) setLoading(true);
+    try {
+      setDetail(await projectService.getProjectDetail(params.id));
+      setApiError("");
+    } catch (error) {
+      setDetail(null);
+      setApiError(error instanceof Error ? error.message : "Unable to load project details.");
+    } finally {
+      if (showLoading) setLoading(false);
+    }
+  }, [params.id]);
+
+  useEffect(() => {
+    void loadDetail(true);
+  }, [loadDetail]);
+
+  if (loading) {
+    return <div className="h-[360px] animate-pulse rounded-panel border border-surface-darkBorder bg-surface-darkElevated/50" />;
+  }
+
+  if (!detail) {
+    return <EmptyState title="Project detail unavailable" description={apiError || "The project could not be loaded."} />;
+  }
+
+  const project = detail.project;
+  const projectChats = detail.linkedChats.slice(0, 3);
+  const projectWorkflows = detail.workflowRuns;
+  const activeWorkflowRun = detail.activeWorkflowRun;
+  const activeRunCount = projectWorkflows.filter((workflow) => workflow.status === "Running" || workflow.status === "Paused").length;
+  const workflowRows = activeWorkflowRun ? [activeWorkflowRun, ...projectWorkflows.filter((run) => run.id !== activeWorkflowRun.id)].slice(0, 4) : projectWorkflows.slice(0, 4);
   const showNotice = (message: string) => {
     setNotice(message);
     window.setTimeout(() => setNotice(""), 1800);
+  };
+  const runAction = async (name: string, operation: () => Promise<unknown>, success: string) => {
+    setPendingAction(name);
+    try {
+      await operation();
+      await loadDetail();
+      showNotice(success);
+    } catch (error) {
+      setApiError(error instanceof Error ? error.message : "Action failed.");
+    } finally {
+      setPendingAction("");
+    }
+  };
+  const resolveWorkflowId = async () => {
+    const runWorkflowId = activeWorkflowRun?.workflowId ?? projectWorkflows.find((run) => run.workflowId)?.workflowId;
+    if (runWorkflowId) return runWorkflowId;
+    const workflows = await workflowService.listWorkflows({ projectId: project.id, limit: 20 });
+    if (!workflows[0]) throw new Error("No configured workflow is available for this project.");
+    return workflows[0].id;
+  };
+  const startWorkflow = (message: string) =>
+    runAction("run", async () => workflowService.runWorkflow(await resolveWorkflowId(), project.id), message);
+  const exportArtifact = async (artifact?: Artifact) => {
+    const selected = artifact ?? detail.artifacts.find((item) => item.type === "Spec") ?? detail.artifacts[0];
+    if (!selected) {
+      setApiError("No artifact is available to export.");
+      return;
+    }
+    setPendingAction("export");
+    try {
+      const exported = await artifactService.exportArtifact(selected.id);
+      const url = URL.createObjectURL(new Blob([exported.content], { type: exported.mimeType }));
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = exported.filename;
+      link.click();
+      URL.revokeObjectURL(url);
+      showNotice("Artifact export prepared.");
+    } catch (error) {
+      setApiError(error instanceof Error ? error.message : "Export failed.");
+    } finally {
+      setPendingAction("");
+    }
+  };
+  const saveRequirement = async () => {
+    setPendingAction("requirement");
+    try {
+      const requirementContract = await projectService.saveRequirementContract(project.id, detail.requirementContract, project);
+      setDetail((current) => current ? { ...current, requirementContract } : current);
+      showNotice("Requirement contract saved and locked.");
+    } catch (error) {
+      setApiError(error instanceof Error ? error.message : "Requirement contract save failed.");
+    } finally {
+      setPendingAction("");
+    }
+  };
+  const saveMemory = async (memories: string[]) => {
+    setPendingAction("memory");
+    try {
+      const projectMemory = await projectService.saveMemory(project.id, memories);
+      setDetail((current) => current ? { ...current, projectMemory } : current);
+      showNotice("Project memory saved.");
+    } catch (error) {
+      setApiError(error instanceof Error ? error.message : "Project memory save failed.");
+    } finally {
+      setPendingAction("");
+    }
   };
 
   return (
@@ -41,25 +144,29 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
         </div>
         <div className="flex flex-wrap gap-2">
           <StatusBadge status={project.status} />
-          <Button size="sm" variant="primary" icon={<Rocket className="h-4 w-4" />} onClick={() => showNotice("Mock agent workflow queued for this project.")}>
+          <Button size="sm" variant="primary" icon={<Rocket className="h-4 w-4" />} onClick={() => void startWorkflow("Agent workflow queued for this project.")} disabled={Boolean(pendingAction)}>
             Run Agent Workflow
           </Button>
-          <Button size="sm" variant="secondary" icon={<Pause className="h-4 w-4" />} onClick={() => showNotice("Project workflow paused locally.")}>
+          <Button size="sm" variant="secondary" icon={<Pause className="h-4 w-4" />} onClick={() => activeWorkflowRun && void runAction("pause", () => workflowService.pauseWorkflowRun(activeWorkflowRun.id), "Project workflow paused.")} disabled={!activeWorkflowRun || activeWorkflowRun.status !== "Running" || Boolean(pendingAction)}>
             Pause
           </Button>
-          <Button size="sm" variant="secondary" icon={<Play className="h-4 w-4" />} onClick={() => showNotice("Project workflow resumed locally.")}>
+          <Button size="sm" variant="secondary" icon={<Play className="h-4 w-4" />} onClick={() => activeWorkflowRun && void runAction("resume", () => workflowService.resumeWorkflowRun(activeWorkflowRun.id), "Project workflow resumed.")} disabled={!activeWorkflowRun || activeWorkflowRun.status !== "Paused" || Boolean(pendingAction)}>
             Resume
           </Button>
-          <Button size="sm" variant="secondary" icon={<Download className="h-4 w-4" />} onClick={() => showNotice("Mock project export prepared.")}>
+          <Button size="sm" variant="secondary" icon={<Square className="h-4 w-4" />} onClick={() => activeWorkflowRun && void runAction("stop", () => workflowService.stopWorkflowRun(activeWorkflowRun.id), "Project workflow stopped.")} disabled={!activeWorkflowRun || !["Running", "Paused"].includes(activeWorkflowRun.status) || Boolean(pendingAction)}>
+            Stop
+          </Button>
+          <Button size="sm" variant="secondary" icon={<Download className="h-4 w-4" />} onClick={() => void exportArtifact()} disabled={!detail.artifacts.length || Boolean(pendingAction)}>
             Export
           </Button>
-          <Button size="sm" variant="secondary" icon={<WandSparkles className="h-4 w-4" />} onClick={() => showNotice("Mock Codex prompt bundle generated.")}>
+          <Button size="sm" variant="secondary" icon={<WandSparkles className="h-4 w-4" />} onClick={() => void startWorkflow("Workflow queued to generate Codex prompts.")} disabled={Boolean(pendingAction)}>
             Generate Codex Prompts
           </Button>
         </div>
       </div>
 
       {notice ? <p className="mb-4 rounded-card border border-success/25 bg-success/10 px-4 py-3 text-sm text-success">{notice}</p> : null}
+      {apiError ? <p className="mb-4 rounded-card border border-warning/25 bg-warning/10 px-4 py-3 text-sm text-warning">{apiError}</p> : null}
 
       <GlassCard className="mb-6 border-primary/25 bg-gradient-to-r from-primary/15 via-success/5 to-warning/10">
         <div className="grid gap-4 md:grid-cols-3">
@@ -95,26 +202,35 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
 
       <div className="grid gap-4 md:grid-cols-4">
         <MetricCard label="Progress" value={`${project.progress}%`} detail="Requirement-bound delivery" />
-        <MetricCard label="Token usage" value={formatTokens(project.tokenUsage)} detail="Project lifetime estimate" />
-        <MetricCard label="Cost" value={formatCurrency(project.cost)} detail="Mocked spend to date" />
-        <MetricCard label="Active agents" value="7" detail="Designer, architect, critic, resolver" />
+        <MetricCard label="Token usage" value={formatTokens(detail.usageSummary.totalTokens || project.tokenUsage)} detail="Project lifetime usage" />
+        <MetricCard label="Cost" value={formatCurrency(detail.usageSummary.costUsd || project.cost)} detail="Project spend to date" />
+        <MetricCard label="Active agents" value={String(activeRunCount)} detail="Active or paused workflow runs" />
       </div>
 
       <div className="mt-6 grid gap-6 xl:grid-cols-[1fr_.8fr]">
-        <RequirementContractCard contract={requirementContract} />
+        {detail.requirementContract ? (
+          <RequirementContractCard contract={detail.requirementContract} onSave={() => void saveRequirement()} saving={pendingAction === "requirement"} />
+        ) : (
+          <EmptyState
+            title="No requirement contract"
+            description="Create and lock a requirement contract before running the project workflow."
+            action={<Button variant="secondary" onClick={() => void saveRequirement()} disabled={pendingAction === "requirement"}>Create & lock</Button>}
+          />
+        )}
         <div className="space-y-6">
           <GlassCard>
             <h2 className="text-lg font-semibold text-white">Active Agents</h2>
             <div className="mt-4 space-y-3">
-              {["GPT-5 Designer", "Gemini Architect", "Claude Critic", "Budget Manager"].map((agent, index) => (
-                <div key={agent} className="flex items-center justify-between rounded-card bg-surface-darkElevated/60 p-3">
-                  <span className="text-sm font-medium text-slate-200">{agent}</span>
-                  <StatusBadge status={index === 1 ? "Running" : "Success"} />
+              {!workflowRows.length ? <p className="text-sm text-muted">Run the configured workflow to populate agent status.</p> : null}
+              {workflowRows.map((workflow) => (
+                <div key={workflow.id} className="flex items-center justify-between rounded-card bg-surface-darkElevated/60 p-3">
+                  <span className="text-sm font-medium capitalize text-slate-200">{workflow.currentNodeId.replace(/[_-]/g, " ")}</span>
+                  <StatusBadge status={workflow.status} />
                 </div>
               ))}
             </div>
           </GlassCard>
-          <ExecutionTimeline />
+          <ExecutionTimeline events={detail.timeline} />
         </div>
       </div>
 
@@ -124,14 +240,15 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
       </div>
 
       <div className="mt-6 grid gap-6 xl:grid-cols-[1.2fr_.8fr]">
-        <CritiquePanel issues={critiqueIssues} />
-        <ArtifactPanel artifacts={artifacts.filter((artifact) => artifact.projectId === project.id)} />
+        <CritiquePanel issues={detail.critiqueIssues} />
+        <ArtifactPanel artifacts={detail.artifacts} onExport={(artifact) => void exportArtifact(artifact)} />
       </div>
 
       <div className="mt-6 grid gap-6 xl:grid-cols-3">
         <GlassCard>
           <h2 className="text-lg font-semibold text-white">Linked Chats</h2>
           <div className="mt-4 space-y-3">
+            {!projectChats.length ? <p className="text-sm text-muted">Project chats will appear here when created.</p> : null}
             {projectChats.map((chat) => (
               <div key={chat.id} className="rounded-card border border-surface-darkBorder bg-surface-darkElevated/60 p-3">
                 <p className="font-semibold text-white">{chat.title}</p>
@@ -140,16 +257,24 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
             ))}
           </div>
         </GlassCard>
-        <ProjectMemoryPanel memories={projectMemory} />
+        <ProjectMemoryPanel memories={detail.projectMemory} onSave={saveMemory} saving={pendingAction === "memory"} />
         <GlassCard>
           <h2 className="text-lg font-semibold text-white">Token/Cost Analytics</h2>
           <div className="mt-4 space-y-3">
-            {projectWorkflows.map((workflow) => (
-              <div key={workflow.id} className="rounded-card border border-surface-darkBorder bg-surface-darkElevated/60 p-3">
-                <p className="font-semibold text-white">{workflow.name}</p>
-                <p className="mt-1 text-sm text-muted">{formatTokens(workflow.totalTokens)} · {formatCurrency(workflow.totalCost)}</p>
-              </div>
-            ))}
+            {!detail.usageSummary.bySource.length && !projectWorkflows.length ? <p className="text-sm text-muted">No project usage has been recorded.</p> : null}
+            {detail.usageSummary.bySource.length
+              ? detail.usageSummary.bySource.map((row) => (
+                  <div key={row.source} className="rounded-card border border-surface-darkBorder bg-surface-darkElevated/60 p-3">
+                    <p className="font-semibold text-white">{row.source.replace(/_/g, " ")}</p>
+                    <p className="mt-1 text-sm text-muted">{formatTokens(row.inputTokens + row.outputTokens)} · {formatCurrency(row.costUsd)}</p>
+                  </div>
+                ))
+              : projectWorkflows.map((workflow) => (
+                  <div key={workflow.id} className="rounded-card border border-surface-darkBorder bg-surface-darkElevated/60 p-3">
+                    <p className="font-semibold text-white">{workflow.name}</p>
+                    <p className="mt-1 text-sm text-muted">{formatTokens(workflow.totalTokens)} · {formatCurrency(workflow.totalCost)}</p>
+                  </div>
+                ))}
           </div>
         </GlassCard>
       </div>

@@ -4,7 +4,7 @@ import { Menu } from "lucide-react";
 import dynamic from "next/dynamic";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { AiPageLoader } from "@/components/shared/AiPageLoader";
 import { useUiStore } from "@/store/ui-store";
 import { AppSidebar } from "./AppSidebar";
@@ -22,7 +22,6 @@ export function AppShell({ children }: { children: ReactNode }) {
   const setCommandPaletteOpen = useUiStore((state) => state.setCommandPaletteOpen);
   const setMobileSidebarOpen = useUiStore((state) => state.setMobileSidebarOpen);
   const toggleMobileSidebar = useUiStore((state) => state.toggleMobileSidebar);
-  const [initialLoading, setInitialLoading] = useState(true);
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", theme === "dark");
@@ -30,15 +29,8 @@ export function AppShell({ children }: { children: ReactNode }) {
   }, [theme]);
 
   useEffect(() => {
-    const timeout = window.setTimeout(() => setInitialLoading(false), 520);
-    return () => window.clearTimeout(timeout);
-  }, []);
-
-  useEffect(() => {
     setFullScreenPage(null);
-    setPageLoading(true);
-    const timeout = window.setTimeout(() => setPageLoading(false), 220);
-    return () => window.clearTimeout(timeout);
+    setPageLoading(false);
   }, [pathname, setFullScreenPage, setPageLoading]);
 
   useEffect(() => {
@@ -96,7 +88,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         </main>
       </div>
       {commandPaletteOpen ? <CommandPalette /> : null}
-      <AiPageLoader visible={initialLoading || pageLoading} />
+      <AiPageLoader visible={pageLoading} />
     </div>
   );
 }

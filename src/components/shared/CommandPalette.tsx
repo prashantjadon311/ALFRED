@@ -22,7 +22,6 @@ export function CommandPalette() {
   const [query, setQuery] = useState("");
   const open = useUiStore((state) => state.commandPaletteOpen);
   const setOpen = useUiStore((state) => state.setCommandPaletteOpen);
-  const setPageLoading = useUiStore((state) => state.setPageLoading);
   const filtered = commands.filter((command) => command.label.toLowerCase().includes(query.toLowerCase()));
 
   if (!open) return null;
@@ -51,7 +50,6 @@ export function CommandPalette() {
                 key={command.href}
                 className="flex w-full items-center gap-3 rounded-card px-3 py-3 text-left text-sm text-slate-200 transition hover:bg-white/7"
                 onClick={() => {
-                  setPageLoading(true);
                   router.push(command.href);
                   setOpen(false);
                 }}

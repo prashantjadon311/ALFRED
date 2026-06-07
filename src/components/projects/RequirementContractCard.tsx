@@ -1,9 +1,18 @@
 import { CheckCircle2, LockKeyhole, ShieldCheck, Target, type LucideIcon } from "lucide-react";
+import { Button } from "@/components/shared/Button";
 import { GlassCard } from "@/components/shared/GlassCard";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import type { RequirementContract } from "@/lib/types";
 
-export function RequirementContractCard({ contract }: { contract: RequirementContract }) {
+export function RequirementContractCard({
+  contract,
+  onSave,
+  saving = false
+}: {
+  contract: RequirementContract;
+  onSave?: () => void;
+  saving?: boolean;
+}) {
   const sections: Array<[string, string[], LucideIcon]> = [
     ["Non-negotiables", contract.nonNegotiables, ShieldCheck],
     ["Success criteria", contract.successCriteria, CheckCircle2],
@@ -20,8 +29,15 @@ export function RequirementContractCard({ contract }: { contract: RequirementCon
             </p>
             <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-200">{contract.originalRequirement}</p>
           </div>
-          <div className="rounded-card border border-success/25 bg-success/10 px-3 py-2 text-xs font-semibold text-success">
-            Immutable
+          <div className="flex items-center gap-2">
+            <div className="rounded-card border border-success/25 bg-success/10 px-3 py-2 text-xs font-semibold text-success">
+              {contract.locked ? "Immutable" : "Draft"}
+            </div>
+            {onSave ? (
+              <Button size="sm" variant="secondary" onClick={onSave} disabled={saving}>
+                {saving ? "Saving..." : contract.locked ? "Save contract" : "Save & lock"}
+              </Button>
+            ) : null}
           </div>
         </div>
       </div>
@@ -54,7 +70,7 @@ export function RequirementContractCard({ contract }: { contract: RequirementCon
             </ul>
           </section>
         ))}
-        <p className="text-xs text-muted">Last updated May 21, 2026 · Contract id {contract.id}</p>
+        <p className="text-xs text-muted">Contract id {contract.id}</p>
       </div>
     </GlassCard>
   );

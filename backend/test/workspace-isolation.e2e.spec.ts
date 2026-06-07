@@ -76,6 +76,7 @@ describe("A.L.F.R.E.D. workspace isolation and provisioning", () => {
     await expectListExcludes(authed(token, workspaceB).get("/prompts"), prompt.body.data.id);
 
     await expectBlocked(authed(token, workspaceB).get(`/projects/${projectId}`));
+    await expectBlocked(authed(token, workspaceB).get(`/projects/${projectId}/detail`));
     await expectBlocked(authed(token, workspaceB).patch(`/projects/${projectId}`).send({ progress: 50 }));
     await expectBlocked(authed(token, workspaceB).delete(`/projects/${projectId}`));
     await expectBlocked(authed(token, workspaceB).get(`/chats/${chat.body.data.id}`));

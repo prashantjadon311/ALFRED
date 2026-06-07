@@ -2,11 +2,11 @@
 
 import { AnimatePresence, motion } from "framer-motion";
 import { Grid2X2, List, Plus, X } from "lucide-react";
+import dynamic from "next/dynamic";
 import { useEffect, useMemo, useState } from "react";
 import { ProjectCard } from "@/components/projects/ProjectCard";
 import { ProjectDateFilters, defaultProjectDateFilters, type ProjectDateFilterState } from "@/components/projects/ProjectDateFilters";
 import { ProjectTable } from "@/components/projects/ProjectTable";
-import { ProjectTaskDashboard } from "@/components/projects/ProjectTaskDashboard";
 import { Button } from "@/components/shared/Button";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { GlassCard } from "@/components/shared/GlassCard";
@@ -15,6 +15,11 @@ import type { Project, ProjectStatus } from "@/lib/types";
 import { useProjectStore } from "@/store/project-store";
 
 const filters: Array<ProjectStatus | "All"> = ["All", "Active", "Planning", "Waiting Approval", "Paused", "Completed", "Failed"];
+const PROJECT_LIST_PAGE_SIZE = 20;
+const ProjectTaskDashboard = dynamic(
+  () => import("@/components/projects/ProjectTaskDashboard").then((mod) => mod.ProjectTaskDashboard),
+  { ssr: false }
+);
 
 function atStartOfDay(date: Date) {
   const copy = new Date(date);
@@ -86,17 +91,30 @@ export default function ProjectsPage() {
   const [projectDescription, setProjectDescription] = useState("");
   const [projectType, setProjectType] = useState("Software");
   const [dateFilters, setDateFilters] = useState<ProjectDateFilterState>(defaultProjectDateFilters);
+  const [visibleLimit, setVisibleLimit] = useState(PROJECT_LIST_PAGE_SIZE);
   const allProjects = useProjectStore((state) => state.projects);
   const createProject = useProjectStore((state) => state.createProject);
+  const loadProjects = useProjectStore((state) => state.loadFromApi);
+  const normalizedSearch = useMemo(() => search.trim().toLowerCase(), [search]);
   const projects = useMemo(
     () =>
       allProjects.filter((project) => {
         const matchesStatus = filter === "All" || project.status === filter;
-        const matchesSearch = `${project.name} ${project.description}`.toLowerCase().includes(search.toLowerCase());
+        const matchesSearch = !normalizedSearch || `${project.name} ${project.description}`.toLowerCase().includes(normalizedSearch);
         return matchesStatus && matchesSearch && matchesDateFilters(project, dateFilters);
       }),
-    [allProjects, dateFilters, filter, search]
+    [allProjects, dateFilters, filter, normalizedSearch]
   );
+  const visibleProjects = useMemo(() => projects.slice(0, visibleLimit), [projects, visibleLimit]);
+  const hasMoreProjects = visibleProjects.length < projects.length;
+
+  useEffect(() => {
+    void loadProjects();
+  }, [loadProjects]);
+
+  useEffect(() => {
+    setVisibleLimit(PROJECT_LIST_PAGE_SIZE);
+  }, [dateFilters, filter, normalizedSearch]);
 
   useEffect(() => {
     if (!modalOpen) return;
@@ -156,12 +174,14 @@ export default function ProjectsPage() {
 
       <section className="space-y-3">
         <div className="flex items-center justify-between gap-3">
-          <p className="text-sm text-muted">{projects.length} projects shown</p>
+          <p className="text-sm text-muted">
+            {hasMoreProjects ? `${visibleProjects.length} of ${projects.length}` : projects.length} projects shown
+          </p>
         </div>
         {view === "grid" ? (
           projects.length ? (
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-              {projects.map((project) => (
+              {visibleProjects.map((project) => (
                 <ProjectCard key={project.id} project={project} />
               ))}
             </div>
@@ -169,10 +189,17 @@ export default function ProjectsPage() {
             <EmptyState title="No projects found" description="Adjust the filters or create a mocked project to continue." />
           )
         ) : projects.length ? (
-          <ProjectTable projects={projects} />
+          <ProjectTable projects={visibleProjects} />
         ) : (
           <EmptyState title="No projects found" description="Adjust the filters or create a mocked project to continue." />
         )}
+        {hasMoreProjects ? (
+          <div className="flex justify-center">
+            <Button variant="secondary" onClick={() => setVisibleLimit((limit) => limit + PROJECT_LIST_PAGE_SIZE)}>
+              Load more
+            </Button>
+          </div>
+        ) : null}
       </section>
 
       <AnimatePresence>

@@ -2,10 +2,9 @@
 
 import { ChevronDown, Sparkles } from "lucide-react";
 import dynamic from "next/dynamic";
-import { useMemo } from "react";
 import { PopoverMenu } from "@/components/shared/PopoverMenu";
 import { Tooltip } from "@/components/shared/Tooltip";
-import { cn, formatCurrency, formatTokens } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import { useWorkspaceStore } from "@/store/workspace-store";
 
 const WorkspaceSwitcherPanel = dynamic(() => import("./WorkspaceSwitcherPanel").then((mod) => mod.WorkspaceSwitcherPanel), {
@@ -14,10 +13,14 @@ const WorkspaceSwitcherPanel = dynamic(() => import("./WorkspaceSwitcherPanel").
 });
 
 export function WorkspaceSwitcher({ collapsed = false, onNavigate }: { collapsed?: boolean; onNavigate?: () => void }) {
-  const allWorkspaces = useWorkspaceStore((state) => state.workspaces);
   const activeWorkspaceId = useWorkspaceStore((state) => state.activeWorkspaceId);
-  const workspaces = useMemo(() => allWorkspaces.filter((workspace) => !workspace.archived), [allWorkspaces]);
-  const activeWorkspace = workspaces.find((workspace) => workspace.id === activeWorkspaceId) ?? workspaces[0];
+  const activeWorkspaceName = useWorkspaceStore(
+    (state) =>
+      state.workspaces.find((workspace) => workspace.id === state.activeWorkspaceId && !workspace.archived)?.name ??
+      state.workspaces.find((workspace) => !workspace.archived)?.name ??
+      "Workspace"
+  );
+  const workspaceLabel = activeWorkspaceId ? activeWorkspaceId.slice(-6) : "local";
 
   const trigger = (open: boolean) => {
     const content = collapsed ? (
@@ -30,15 +33,13 @@ export function WorkspaceSwitcher({ collapsed = false, onNavigate }: { collapsed
           <Sparkles className="h-4 w-4" />
         </span>
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-sm font-semibold text-white">{activeWorkspace?.name ?? "Workspace"}</span>
-          <span className="block truncate text-xs text-muted">
-            {formatTokens(activeWorkspace?.stats.tokenUsage ?? 0)} tokens · {formatCurrency(activeWorkspace?.stats.cost ?? 0)}
-          </span>
+          <span className="block truncate text-sm font-semibold text-white">{activeWorkspaceName}</span>
+          <span className="block truncate text-xs text-muted">Workspace {workspaceLabel}</span>
         </span>
         <ChevronDown className={cn("h-4 w-4 shrink-0 text-muted transition", open && "rotate-180 text-white")} />
       </span>
     );
-    return collapsed ? <Tooltip label={activeWorkspace?.name ?? "Workspace"}>{content}</Tooltip> : content;
+    return collapsed ? <Tooltip label={activeWorkspaceName}>{content}</Tooltip> : content;
   };
 
   return (

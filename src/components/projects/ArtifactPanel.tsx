@@ -3,7 +3,7 @@ import { EmptyState } from "@/components/shared/EmptyState";
 import { GlassCard } from "@/components/shared/GlassCard";
 import type { Artifact } from "@/lib/types";
 
-export function ArtifactPanel({ artifacts }: { artifacts: Artifact[] }) {
+export function ArtifactPanel({ artifacts, onExport }: { artifacts: Artifact[]; onExport?: (artifact: Artifact) => void }) {
   return (
     <GlassCard>
       <h2 className="flex items-center gap-2 text-lg font-semibold text-white">
@@ -22,7 +22,13 @@ export function ArtifactPanel({ artifacts }: { artifacts: Artifact[] }) {
                 <p className="text-xs text-muted">{artifact.type} · {artifact.createdAt.slice(0, 10)}</p>
               </div>
             </div>
-            <button className="rounded-button px-2 py-1 text-sm font-medium text-primary-soft transition hover:bg-white/7 hover:text-white">Open</button>
+            <button
+              className="rounded-button px-2 py-1 text-sm font-medium text-primary-soft transition hover:bg-white/7 hover:text-white"
+              onClick={() => onExport?.(artifact)}
+              type="button"
+            >
+              Export
+            </button>
           </div>
         ))}
       </div>

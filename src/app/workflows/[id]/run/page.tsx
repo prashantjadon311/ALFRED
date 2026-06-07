@@ -10,7 +10,7 @@ import { StatusBadge } from "@/components/shared/StatusBadge";
 import { BudgetMeter } from "@/components/workflow/BudgetMeter";
 import { TokenCostMeter } from "@/components/workflow/TokenCostMeter";
 import { isApiMode } from "@/lib/api-client";
-import { critiqueIssues } from "@/lib/mock-data";
+import { critiqueIssues } from "@/lib/mocks/project-detail";
 import type { WorkflowRun } from "@/lib/types";
 import { formatCurrency, formatTokens } from "@/lib/utils";
 import { subscribeToWorkflowRunEvents } from "@/services/workflow-events-service";
@@ -86,18 +86,12 @@ export default function WorkflowRunPage({ params }: { params: { id: string } }) 
   const workflow = apiMode ? apiRun : localWorkflow;
 
   const loadLiveState = useCallback(async () => {
-    const [run, graph, logs, issues, artifacts] = await Promise.all([
-      workflowService.getWorkflowRun(params.id),
-      workflowService.getWorkflowRunGraphState(params.id),
-      workflowService.getWorkflowRunLogs(params.id),
-      workflowService.getWorkflowRunIssues(params.id),
-      workflowService.getWorkflowRunArtifacts(params.id)
-    ]);
-    setApiRun(run);
-    setGraphState(graph);
-    setRunLogs(logs);
-    setRunIssues(issues);
-    setRunArtifacts(artifacts);
+    const detail = await workflowService.getWorkflowRunDetail(params.id);
+    setApiRun(detail.run);
+    setGraphState(detail.graphState);
+    setRunLogs(detail.logs);
+    setRunIssues(detail.issues);
+    setRunArtifacts(detail.artifacts);
     setApiError("");
   }, [params.id]);
 
