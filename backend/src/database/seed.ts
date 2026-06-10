@@ -3,6 +3,7 @@ import * as bcrypt from "bcryptjs";
 import { MongoClient, ObjectId } from "mongodb";
 import { defaultWorkflowDsl } from "../orchestrator/default-workflow.dsl";
 import { ensureMongoIndexes } from "./index-definitions";
+import { ensureRepositoryPricingSnapshots } from "./pricing-seed";
 
 const MONGO_URI = process.env.MONGODB_URI ?? "mongodb://localhost:27017";
 const DB_NAME = process.env.MONGODB_DB_NAME ?? "alfred";
@@ -14,6 +15,7 @@ async function seed() {
   console.log("Connected to MongoDB — seeding A.L.F.R.E.D.");
 
   await ensureMongoIndexes(db);
+  await ensureRepositoryPricingSnapshots(db);
 
   // Demo user
   const demoEmail = "demo@alfred.local";

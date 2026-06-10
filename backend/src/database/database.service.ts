@@ -2,6 +2,7 @@ import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from "@nestjs/commo
 import { ConfigService } from "@nestjs/config";
 import { Db, Document, MongoClient } from "mongodb";
 import { ensureMongoIndexes } from "./index-definitions";
+import { ensureRepositoryPricingSnapshots } from "./pricing-seed";
 
 @Injectable()
 export class DatabaseService implements OnModuleInit, OnModuleDestroy {
@@ -17,6 +18,7 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
     this.database = this.client.db(this.config.get<string>("dbName") ?? "alfred");
     this.logger.log("MongoDB connected");
     await this.ensureIndexes();
+    await ensureRepositoryPricingSnapshots(this.database);
   }
 
   private async ensureIndexes() {

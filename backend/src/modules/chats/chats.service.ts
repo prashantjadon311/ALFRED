@@ -79,18 +79,21 @@ export class ChatsService {
       createdAt: new Date()
     } as any);
 
-    const llmResult = await this.llm.chat({ prompt: body.content, systemPrompt: chat.systemPrompt, providerType: body.providerType ?? "mock", modelName: body.modelName, nodeKey: "chat" });
+    const llmResult = await this.llm.chat({ prompt: body.content, systemPrompt: chat.systemPrompt, providerType: body.providerType ?? "mock", modelName: body.modelName, userId: userId.toHexString(), nodeKey: "chat" });
 
     const assistantMsg = await this.messages.create({
       userId, workspaceId, chatId, projectId: chat.projectId,
       role: "assistant", content: llmResult.content,
       modelName: llmResult.modelName, providerType: llmResult.providerType,
       inputTokens: llmResult.inputTokens, outputTokens: llmResult.outputTokens,
-      costUsd: llmResult.costUsd, latencyMs: llmResult.latencyMs,
+      cachedInputTokens: llmResult.cachedInputTokens, reasoningTokens: llmResult.reasoningTokens,
+      costUsd: llmResult.costUsd, pricingSnapshotId: llmResult.pricingSnapshotId,
+      usageSource: llmResult.usageSource, costSource: llmResult.costSource, calculatedAt: llmResult.calculatedAt,
+      latencyMs: llmResult.latencyMs,
       createdAt: new Date()
     } as any);
 
-    await this.usage.record({ userId, workspaceId, projectId: chat.projectId, chatId, providerType: llmResult.providerType, modelName: llmResult.modelName, inputTokens: llmResult.inputTokens, outputTokens: llmResult.outputTokens, costUsd: llmResult.costUsd, latencyMs: llmResult.latencyMs, source: "chat" });
+    await this.usage.record({ userId, workspaceId, projectId: chat.projectId, chatId, ...this.usageFields(llmResult), source: "chat" });
 
     return { userMessage: this.messages.serialize(userMsg), assistantMessage: this.messages.serialize(assistantMsg) };
   }
@@ -122,16 +125,19 @@ export class ChatsService {
     if (!original || original.userId.toString() !== userId.toString() || original.workspaceId?.toString() !== workspaceId.toString() || original.chatId.toString() !== chatId.toString()) throw new ForbiddenException();
     const history = await this.messages.listByChat(chatId, 0, 50, userId, workspaceId);
     const context = history.items.filter((m: any) => m.role === "user").map((m: any) => m.content).join("\n");
-    const llmResult = await this.llm.chat({ prompt: context, systemPrompt: chat.systemPrompt, providerType: body.providerType ?? "mock", modelName: body.modelName, nodeKey: "chat" });
+    const llmResult = await this.llm.chat({ prompt: context, systemPrompt: chat.systemPrompt, providerType: body.providerType ?? "mock", modelName: body.modelName, userId: userId.toHexString(), nodeKey: "chat" });
     const newMsg = await this.messages.create({
       userId, workspaceId, chatId, projectId: chat.projectId,
       role: "assistant", content: llmResult.content,
       modelName: llmResult.modelName, providerType: llmResult.providerType,
       inputTokens: llmResult.inputTokens, outputTokens: llmResult.outputTokens,
-      costUsd: llmResult.costUsd, latencyMs: llmResult.latencyMs,
+      cachedInputTokens: llmResult.cachedInputTokens, reasoningTokens: llmResult.reasoningTokens,
+      costUsd: llmResult.costUsd, pricingSnapshotId: llmResult.pricingSnapshotId,
+      usageSource: llmResult.usageSource, costSource: llmResult.costSource, calculatedAt: llmResult.calculatedAt,
+      latencyMs: llmResult.latencyMs,
       parentMessageId: new ObjectId(body.messageId), createdAt: new Date()
     } as any);
-    await this.usage.record({ userId, workspaceId, projectId: chat.projectId, chatId, providerType: llmResult.providerType, modelName: llmResult.modelName, inputTokens: llmResult.inputTokens, outputTokens: llmResult.outputTokens, costUsd: llmResult.costUsd, latencyMs: llmResult.latencyMs, source: "chat" });
+    await this.usage.record({ userId, workspaceId, projectId: chat.projectId, chatId, ...this.usageFields(llmResult), source: "chat" });
     return this.messages.serialize(newMsg);
   }
 
@@ -147,22 +153,37 @@ export class ChatsService {
   async compare(userId: ObjectId, workspaceId: ObjectId, body: { prompt: string; models: Array<{ providerType: string; modelName?: string }>; chatId?: string }) {
     const chatId = body.chatId ? new ObjectId(body.chatId) : undefined;
     if (chatId && !(await this.chats.findByIdForWorkspace(chatId, userId, workspaceId))) throw new NotFoundException("Chat not found");
-    const results = await Promise.all(body.models.map((m) => this.llm.chat({ prompt: body.prompt, providerType: m.providerType, modelName: m.modelName, nodeKey: "compare" })));
+    const results = await Promise.allSettled(body.models.map((m) => this.llm.chat({ prompt: body.prompt, providerType: m.providerType, modelName: m.modelName, userId: userId.toHexString(), nodeKey: "compare" })));
     for (const result of results) {
+      if (result.status !== "fulfilled") continue;
       await this.usage.record({
         userId,
         workspaceId,
         chatId,
-        providerType: result.providerType,
-        modelName: result.modelName,
-        inputTokens: result.inputTokens,
-        outputTokens: result.outputTokens,
-        costUsd: result.costUsd,
-        latencyMs: result.latencyMs,
+        ...this.usageFields(result.value),
         source: "compare"
       });
     }
-    return results.map((r, i) => ({ model: body.models[i], content: r.content, inputTokens: r.inputTokens, outputTokens: r.outputTokens, costUsd: r.costUsd, latencyMs: r.latencyMs }));
+    return results.map((result, i) => result.status === "fulfilled"
+      ? { model: body.models[i], ...result.value }
+      : { model: body.models[i], error: result.reason instanceof Error ? result.reason.message : "Model execution failed" });
+  }
+
+  private usageFields(result: Awaited<ReturnType<LlmRouterService["chat"]>>) {
+    return {
+      providerType: result.providerType,
+      modelName: result.modelName,
+      inputTokens: result.inputTokens,
+      outputTokens: result.outputTokens,
+      cachedInputTokens: result.cachedInputTokens,
+      reasoningTokens: result.reasoningTokens,
+      costUsd: result.costUsd,
+      pricingSnapshotId: result.pricingSnapshotId,
+      usageSource: result.usageSource,
+      costSource: result.costSource,
+      calculatedAt: result.calculatedAt,
+      latencyMs: result.latencyMs
+    };
   }
 
   private async assertProject(userId: ObjectId, workspaceId: ObjectId, projectId: ObjectId) {

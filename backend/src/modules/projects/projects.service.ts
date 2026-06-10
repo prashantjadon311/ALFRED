@@ -118,7 +118,8 @@ export class ProjectsService {
             _id: "$source",
             inputTokens: { $sum: "$inputTokens" },
             outputTokens: { $sum: "$outputTokens" },
-            costUsd: { $sum: "$costUsd" }
+            costUsd: { $sum: "$costUsd" },
+            unavailableCostEvents: { $sum: { $cond: [{ $eq: ["$costSource", "unavailable"] }, 1, 0] } }
           }
         },
         { $sort: { costUsd: -1 } }
@@ -138,11 +139,13 @@ export class ProjectsService {
       outputTokens: usageRows.reduce((sum, row) => sum + Number(row.outputTokens ?? 0), 0),
       totalTokens: usageRows.reduce((sum, row) => sum + Number(row.inputTokens ?? 0) + Number(row.outputTokens ?? 0), 0),
       costUsd: usageRows.reduce((sum, row) => sum + Number(row.costUsd ?? 0), 0),
+      unavailableCostEvents: usageRows.reduce((sum, row) => sum + Number(row.unavailableCostEvents ?? 0), 0),
       bySource: usageRows.map((row) => ({
         source: String(row._id ?? "project"),
         inputTokens: Number(row.inputTokens ?? 0),
         outputTokens: Number(row.outputTokens ?? 0),
-        costUsd: Number(row.costUsd ?? 0)
+        costUsd: Number(row.costUsd ?? 0),
+        unavailableCostEvents: Number(row.unavailableCostEvents ?? 0)
       }))
     };
 
@@ -171,7 +174,15 @@ export class ProjectsService {
     await this.get(userId, workspaceId, projectId);
     const rows = await this.usage.collection().aggregate([
       { $match: { userId, workspaceId, projectId } },
-      { $group: { _id: "$source", inputTokens: { $sum: "$inputTokens" }, outputTokens: { $sum: "$outputTokens" }, costUsd: { $sum: "$costUsd" } } }
+      {
+        $group: {
+          _id: "$source",
+          inputTokens: { $sum: "$inputTokens" },
+          outputTokens: { $sum: "$outputTokens" },
+          costUsd: { $sum: "$costUsd" },
+          unavailableCostEvents: { $sum: { $cond: [{ $eq: ["$costSource", "unavailable"] }, 1, 0] } }
+        }
+      }
     ]).toArray();
     return rows;
   }

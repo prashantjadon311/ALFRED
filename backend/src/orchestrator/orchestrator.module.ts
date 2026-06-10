@@ -12,9 +12,10 @@ import { StructuredOutputParserService } from "./structured-output-parser.servic
 import { RequirementDriftService } from "./requirement-drift.service";
 import { CritiqueResolutionService } from "./critique-resolution.service";
 import { WorkflowStateMachine } from "./workflow-state-machine";
+import { PricingModule } from "../modules/pricing/pricing.module";
 
 @Module({
-  imports: [RepositoriesModule, LlmGatewayModule, BudgetModule, UsageModule, RealtimeModule],
+  imports: [RepositoriesModule, LlmGatewayModule, BudgetModule, UsageModule, RealtimeModule, PricingModule],
   providers: [WorkflowOrchestratorService, WorkflowDslValidatorService, WorkflowContextBuilderService, AgentPromptBuilderService, StructuredOutputParserService, RequirementDriftService, CritiqueResolutionService, WorkflowStateMachine],
   exports: [WorkflowOrchestratorService, WorkflowDslValidatorService, StructuredOutputParserService, RequirementDriftService, WorkflowStateMachine]
 })

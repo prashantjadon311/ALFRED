@@ -4,6 +4,19 @@ import { UsageEventsRepository } from "../../repositories/usage-events.repositor
 import { ProjectsRepository } from "../../repositories/projects.repository";
 import { WorkflowRunsRepository } from "../../repositories/workflow-runs.repository";
 import { ChatsRepository } from "../../repositories/chats.repository";
+import { ChatOutput } from "../../llm/interfaces/llm.types";
+
+type UsageRecordInput = Pick<ChatOutput,
+  "providerType" | "modelName" | "inputTokens" | "outputTokens" | "cachedInputTokens" | "reasoningTokens" |
+  "costUsd" | "pricingSnapshotId" | "usageSource" | "costSource" | "calculatedAt" | "latencyMs"
+> & {
+  userId: ObjectId;
+  workspaceId: ObjectId;
+  projectId?: ObjectId;
+  workflowRunId?: ObjectId;
+  chatId?: ObjectId;
+  source: string;
+};
 
 @Injectable()
 export class UsageService {
@@ -16,7 +29,7 @@ export class UsageService {
     private readonly chats: ChatsRepository
   ) {}
 
-  async record(input: { userId: ObjectId; workspaceId: ObjectId; projectId?: ObjectId; workflowRunId?: ObjectId; chatId?: ObjectId; providerType: string; modelName: string; inputTokens: number; outputTokens: number; costUsd: number; latencyMs: number; source: string }) {
+  async record(input: UsageRecordInput) {
     this.invalidateUser(input.userId, input.workspaceId);
     const event = await this.usage.create({ ...input, totalTokens: input.inputTokens + input.outputTokens, createdAt: new Date() } as any);
     if (input.projectId) await this.projects.incrementUsage(input.projectId, input.userId, input.inputTokens, input.outputTokens, input.costUsd, input.workspaceId);
@@ -45,9 +58,19 @@ export class UsageService {
     return this.cached(userId, workspaceId, "summary", async () => {
       const rows = await this.usage.collection().aggregate([
         { $match: { userId, workspaceId } },
-        { $group: { _id: null, inputTokens: { $sum: "$inputTokens" }, outputTokens: { $sum: "$outputTokens" }, totalTokens: { $sum: "$totalTokens" }, costUsd: { $sum: "$costUsd" } } }
+        {
+          $group: {
+            _id: null,
+            inputTokens: { $sum: "$inputTokens" },
+            outputTokens: { $sum: "$outputTokens" },
+            totalTokens: { $sum: "$totalTokens" },
+            costUsd: { $sum: "$costUsd" },
+            unavailableCostEvents: { $sum: { $cond: [{ $eq: ["$costSource", "unavailable"] }, 1, 0] } },
+            estimatedCostEvents: { $sum: { $cond: [{ $eq: ["$costSource", "estimated"] }, 1, 0] } }
+          }
+        }
       ]).toArray();
-      return rows[0] ?? { inputTokens: 0, outputTokens: 0, totalTokens: 0, costUsd: 0 };
+      return rows[0] ?? { inputTokens: 0, outputTokens: 0, totalTokens: 0, costUsd: 0, unavailableCostEvents: 0, estimatedCostEvents: 0 };
     });
   }
 
@@ -65,13 +88,14 @@ export class UsageService {
             inputTokens: { $sum: "$inputTokens" },
             outputTokens: { $sum: "$outputTokens" },
             totalTokens: { $sum: "$totalTokens" },
-            costUsd: { $sum: "$costUsd" }
+            costUsd: { $sum: "$costUsd" },
+            unavailableCostEvents: { $sum: { $cond: [{ $eq: ["$costSource", "unavailable"] }, 1, 0] } }
           }
         },
         { $sort: { _id: -1 } },
         { $limit: 90 },
         { $sort: { _id: 1 } },
-        { $project: { _id: 0, date: "$_id", inputTokens: 1, outputTokens: 1, totalTokens: 1, costUsd: { $round: ["$costUsd", 6] } } }
+        { $project: { _id: 0, date: "$_id", inputTokens: 1, outputTokens: 1, totalTokens: 1, unavailableCostEvents: 1, costUsd: { $round: ["$costUsd", 6] } } }
       ]).toArray()
     );
   }
@@ -91,7 +115,14 @@ export class UsageService {
     return this.cached(userId, workspaceId, `group:${field}`, () =>
       this.usage.collection().aggregate([
         { $match: { userId, workspaceId } },
-        { $group: { _id: field, tokens: { $sum: "$totalTokens" }, costUsd: { $sum: "$costUsd" } } },
+        {
+          $group: {
+            _id: field,
+            tokens: { $sum: "$totalTokens" },
+            costUsd: { $sum: "$costUsd" },
+            unavailableCostEvents: { $sum: { $cond: [{ $eq: ["$costSource", "unavailable"] }, 1, 0] } }
+          }
+        },
         { $sort: { costUsd: -1 } },
         { $limit: 50 }
       ]).toArray()

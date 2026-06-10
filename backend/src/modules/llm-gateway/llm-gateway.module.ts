@@ -11,11 +11,12 @@ import { ModelProvidersModule } from "../model-providers/model-providers.module"
 import { SecurityModule } from "../../security/security.module";
 import { UsageModule } from "../usage/usage.module";
 import { WorkspacesModule } from "../workspaces/workspaces.module";
+import { PricingModule } from "../pricing/pricing.module";
 
 import { LlmGatewayController } from "./llm-gateway.controller";
 
 @Module({
-  imports: [UsageModule, WorkspacesModule, ModelProvidersModule, AiModelsModule, SecurityModule],
+  imports: [UsageModule, WorkspacesModule, ModelProvidersModule, AiModelsModule, SecurityModule, PricingModule],
   providers: [LlmRouterService, MockLlmProvider, OpenAiProvider, AnthropicProvider, GeminiProvider, OllamaProvider, CustomOpenAiCompatibleProvider],
   controllers: [LlmGatewayController],
   exports: [LlmRouterService, MockLlmProvider]

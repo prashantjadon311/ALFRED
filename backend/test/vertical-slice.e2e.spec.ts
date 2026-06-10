@@ -76,7 +76,12 @@ describe("Vertical Slice Integration (unit-layer)", () => {
     const designerOut = await llm.chat({ prompt: requirement.lockedGoal, nodeKey: "chatgpt_designer", iteration: 1 });
     const designerParsed = parser.parse<any>(designerOut.content);
     expect(designerParsed.ok).toBe(true);
-    budgetState = budget.buildSnapshot(100000, designerOut.inputTokens + designerOut.outputTokens, 5, designerOut.costUsd);
+    budgetState = budget.buildSnapshot(
+      100000,
+      designerOut.inputTokens + designerOut.outputTokens,
+      5,
+      budget.calculateCost(designerOut.inputTokens, designerOut.outputTokens)
+    );
 
     // gemini_architect
     const archOut = await llm.chat({ prompt: requirement.lockedGoal, nodeKey: "gemini_architect", iteration: 1 });

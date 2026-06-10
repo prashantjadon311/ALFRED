@@ -10,6 +10,7 @@ import { GeminiProvider } from "./providers/gemini.provider";
 import { MockLlmProvider } from "./providers/mock.provider";
 import { OllamaProvider } from "./providers/ollama.provider";
 import { OpenAiProvider } from "./providers/openai.provider";
+import { PricingService } from "../modules/pricing/pricing.service";
 
 @Injectable()
 export class LlmRouterService {
@@ -21,7 +22,8 @@ export class LlmRouterService {
     private readonly ollama: OllamaProvider,
     private readonly customOpenai: CustomOpenAiCompatibleProvider,
     private readonly modelProviders: ModelProvidersService,
-    private readonly aiModels: AiModelsService
+    private readonly aiModels: AiModelsService,
+    private readonly pricing: PricingService
   ) {}
 
   private get mockMode() {
@@ -42,16 +44,27 @@ export class LlmRouterService {
   }
 
   async chat(input: ChatInput) {
+    const requestedAt = new Date();
     if (this.mockMode || input.providerType === "mock") {
-      return this.mock.chat({ ...input, providerType: "mock" });
+      return this.withCost(await this.mock.chat({ ...input, providerType: "mock" }), requestedAt);
     }
 
     const resolved = await this.resolveProviderInput(input);
-    return this.selectProvider(resolved.providerType).chat(resolved);
+    return this.withCost(await this.selectProvider(resolved.providerType).chat(resolved), requestedAt);
   }
 
   estimateTokens(input: string) {
     return this.mock.estimateTokens(input);
+  }
+
+  private async withCost(output: Awaited<ReturnType<LlmProvider["chat"]>>, requestedAt: Date) {
+    const cost = await this.pricing.calculateCost({
+      providerType: output.providerType,
+      modelName: output.modelName,
+      usage: output,
+      requestedAt
+    });
+    return { ...output, ...cost, calculatedAt: new Date() };
   }
 
   private async resolveProviderInput(input: ChatInput): Promise<ChatInput> {

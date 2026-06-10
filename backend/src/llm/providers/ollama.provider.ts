@@ -1,7 +1,7 @@
 import { Injectable } from "@nestjs/common";
 import { LlmProvider } from "../interfaces/llm-provider.interface";
-import { ChatInput, ChatOutput } from "../interfaces/llm.types";
-import { assertProviderResponse, estimateTokens, joinUrl, readJson, withoutUndefined } from "./http-provider.utils";
+import { ChatInput, ProviderChatOutput } from "../interfaces/llm.types";
+import { assertProviderResponse, estimateTokens, joinUrl, normalizeProviderUsage, readJson, withoutUndefined } from "./http-provider.utils";
 
 @Injectable()
 export class OllamaProvider implements LlmProvider {
@@ -9,7 +9,7 @@ export class OllamaProvider implements LlmProvider {
   private readonly defaultBaseUrl = "http://localhost:11434";
   private readonly defaultModel = "llama3.1";
 
-  async chat(input: ChatInput): Promise<ChatOutput> {
+  async chat(input: ChatInput): Promise<ProviderChatOutput> {
     const started = Date.now();
     const modelName = input.modelName ?? this.defaultModel;
     const messages = [
@@ -32,13 +32,17 @@ export class OllamaProvider implements LlmProvider {
     const json = await readJson(response);
     assertProviderResponse(response, this.providerType);
     const content = json?.message?.content ?? json?.response ?? "";
+    const usage = normalizeProviderUsage({
+      reportedInputTokens: json?.prompt_eval_count,
+      reportedOutputTokens: json?.eval_count,
+      estimatedInputText: `${input.systemPrompt ?? ""}\n${input.prompt}`,
+      estimatedOutputText: content
+    });
     return {
       content,
       providerType: this.providerType,
       modelName: json?.model ?? modelName,
-      inputTokens: json?.prompt_eval_count ?? estimateTokens(`${input.systemPrompt ?? ""}\n${input.prompt}`),
-      outputTokens: json?.eval_count ?? estimateTokens(content),
-      costUsd: 0,
+      ...usage,
       latencyMs: Date.now() - started,
       raw: { model: json?.model, done: json?.done }
     };

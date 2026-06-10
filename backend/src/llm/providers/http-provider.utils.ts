@@ -1,7 +1,33 @@
 import { ServiceUnavailableException } from "@nestjs/common";
+import { NormalizedUsage } from "../interfaces/llm.types";
 
 export function estimateTokens(input: string) {
   return Math.max(1, Math.ceil(input.length / 4));
+}
+
+function tokenCount(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? Math.floor(value) : undefined;
+}
+
+export function normalizeProviderUsage(input: {
+  reportedInputTokens?: unknown;
+  reportedOutputTokens?: unknown;
+  estimatedInputText: string;
+  estimatedOutputText: string;
+  cachedInputTokens?: unknown;
+  reasoningTokens?: unknown;
+}): NormalizedUsage {
+  const reportedInputTokens = tokenCount(input.reportedInputTokens);
+  const reportedOutputTokens = tokenCount(input.reportedOutputTokens);
+  const cachedInputTokens = tokenCount(input.cachedInputTokens);
+  const reasoningTokens = tokenCount(input.reasoningTokens);
+  return {
+    inputTokens: reportedInputTokens ?? estimateTokens(input.estimatedInputText),
+    outputTokens: reportedOutputTokens ?? estimateTokens(input.estimatedOutputText),
+    ...(cachedInputTokens !== undefined ? { cachedInputTokens } : {}),
+    ...(reasoningTokens !== undefined ? { reasoningTokens } : {}),
+    usageSource: reportedInputTokens !== undefined && reportedOutputTokens !== undefined ? "exact" : "estimated"
+  };
 }
 
 export function joinUrl(baseUrl: string, path: string) {

@@ -9,7 +9,7 @@ describe("MockLlmProvider", () => {
     expect(result.content).toBeTruthy();
     expect(result.inputTokens).toBeGreaterThan(0);
     expect(result.outputTokens).toBeGreaterThan(0);
-    expect(result.costUsd).toBeGreaterThanOrEqual(0);
+    expect(result.usageSource).toBe("estimated");
     expect(result.latencyMs).toBeGreaterThan(0);
     expect(result.providerType).toBe("mock");
   });

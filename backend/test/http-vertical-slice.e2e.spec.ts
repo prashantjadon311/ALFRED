@@ -130,6 +130,15 @@ describe("A.L.F.R.E.D. HTTP vertical slice", () => {
       .post("/chats")
       .send({ title: "Project Detail Integration Chat", projectId })
       .expect(201);
+    const chatMessage = await authed()
+      .post(`/chats/${linkedChat.body.data.id}/messages`)
+      .send({ content: "Summarize the locked goal.", providerType: "mock", modelName: "Mock GPT-5" })
+      .expect(201);
+    expect(chatMessage.body.data.assistantMessage).toEqual(expect.objectContaining({
+      usageSource: "estimated",
+      costSource: "estimated"
+    }));
+    expect(chatMessage.body.data.assistantMessage.pricingSnapshotId).toBeTruthy();
 
     await authed()
       .patch(`/requirement-contracts/${contract.body.data.id}`)
@@ -238,6 +247,18 @@ describe("A.L.F.R.E.D. HTTP vertical slice", () => {
     await expectCollectionCount("agent_messages", { userId: ownerObjectId, workflowRunId: workflowRunObjectId }, 8);
     await expectCollectionCount("revision_patches", { userId: ownerObjectId, workflowRunId: workflowRunObjectId }, 1);
     await expectCollectionCount("usage_events", { userId: ownerObjectId, workflowRunId: workflowRunObjectId }, 8);
+    const workflowUsage = await db.db().collection("usage_events").find({ userId: ownerObjectId, workflowRunId: workflowRunObjectId }).toArray();
+    expect(workflowUsage.every((event) => event.usageSource && event.costSource && event.calculatedAt instanceof Date)).toBe(true);
+    expect(workflowUsage.some((event) => event.costSource === "unavailable" && event.costUsd === 0)).toBe(true);
+    expect(workflowUsage.reduce((sum, event) => sum + Number(event.inputTokens), 0)).toBe(run.totalInputTokens);
+    expect(workflowUsage.reduce((sum, event) => sum + Number(event.outputTokens), 0)).toBe(run.totalOutputTokens);
+    expect(workflowUsage.reduce((sum, event) => sum + Number(event.costUsd), 0)).toBeCloseTo(Number(run.totalCostUsd), 12);
+    const persistedChatUsage = await db.db().collection("usage_events").findOne({ userId: ownerObjectId, chatId: new ObjectId(linkedChat.body.data.id), source: "chat" });
+    expect(persistedChatUsage).toEqual(expect.objectContaining({
+      usageSource: "estimated",
+      costSource: "estimated",
+      pricingSnapshotId: chatMessage.body.data.assistantMessage.pricingSnapshotId
+    }));
   }, 60000);
 
   it("pauses, resumes, stops, and scopes workflow run controls", async () => {

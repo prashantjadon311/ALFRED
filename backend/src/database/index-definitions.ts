@@ -25,6 +25,8 @@ export async function ensureMongoIndexes(db: Db) {
     db.collection("ai_models").createIndex({ userId: 1, providerId: 1 }),
     db.collection("ai_models").createIndex({ userId: 1, providerType: 1, name: 1 }),
 
+    db.collection("pricing_snapshots").createIndex({ providerType: 1, modelName: 1, effectiveFrom: 1 }),
+
     db.collection("chats").createIndex({ userId: 1 }),
     db.collection("chats").createIndex({ userId: 1, workspaceId: 1 }),
     db.collection("chats").createIndex({ userId: 1, projectId: 1 }),

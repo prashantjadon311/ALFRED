@@ -48,7 +48,13 @@ export class LlmGatewayController {
       modelName: result.modelName,
       inputTokens: result.inputTokens,
       outputTokens: result.outputTokens,
+      cachedInputTokens: result.cachedInputTokens,
+      reasoningTokens: result.reasoningTokens,
       costUsd: result.costUsd,
+      pricingSnapshotId: result.pricingSnapshotId,
+      usageSource: result.usageSource,
+      costSource: result.costSource,
+      calculatedAt: result.calculatedAt,
       latencyMs: result.latencyMs,
       source: "chat"
     });
@@ -59,23 +65,32 @@ export class LlmGatewayController {
   async compare(@CurrentUser() u: RequestUser, @Headers("x-workspace-id") workspaceHeader: string | undefined, @Body(zodPipe(compareSchema)) body: z.infer<typeof compareSchema>) {
     const userId = new ObjectId(u.userId);
     const workspaceId = await this.scope.resolve(userId, workspaceHeader);
-    const results = await Promise.all(
+    const results = await Promise.allSettled(
       body.models.map((m) => this.llm.chat({ prompt: body.prompt, systemPrompt: body.systemPrompt, providerType: m.providerType, modelName: m.modelName, userId: u.userId, nodeKey: "compare" }))
     );
     for (const result of results) {
+      if (result.status !== "fulfilled") continue;
       await this.usage.record({
         userId,
         workspaceId,
-        providerType: result.providerType,
-        modelName: result.modelName,
-        inputTokens: result.inputTokens,
-        outputTokens: result.outputTokens,
-        costUsd: result.costUsd,
-        latencyMs: result.latencyMs,
+        providerType: result.value.providerType,
+        modelName: result.value.modelName,
+        inputTokens: result.value.inputTokens,
+        outputTokens: result.value.outputTokens,
+        cachedInputTokens: result.value.cachedInputTokens,
+        reasoningTokens: result.value.reasoningTokens,
+        costUsd: result.value.costUsd,
+        pricingSnapshotId: result.value.pricingSnapshotId,
+        usageSource: result.value.usageSource,
+        costSource: result.value.costSource,
+        calculatedAt: result.value.calculatedAt,
+        latencyMs: result.value.latencyMs,
         source: "compare"
       });
     }
-    return ok(results.map((r, i) => ({ model: body.models[i], ...r })));
+    return ok(results.map((result, i) => result.status === "fulfilled"
+      ? { model: body.models[i], ...result.value }
+      : { model: body.models[i], error: result.reason instanceof Error ? result.reason.message : "Model execution failed" }));
   }
 
   @Post("estimate-cost")

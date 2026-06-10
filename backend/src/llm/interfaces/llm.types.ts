@@ -13,15 +13,27 @@ export interface ChatInput {
   context?: unknown;
 }
 
-export interface ChatOutput {
+export interface NormalizedUsage {
+  inputTokens: number;
+  outputTokens: number;
+  cachedInputTokens?: number;
+  reasoningTokens?: number;
+  usageSource: "exact" | "estimated";
+}
+
+export interface ProviderChatOutput extends NormalizedUsage {
   content: string;
   providerType: string;
   modelName: string;
-  inputTokens: number;
-  outputTokens: number;
-  costUsd: number;
   latencyMs: number;
   raw?: unknown;
+}
+
+export interface ChatOutput extends ProviderChatOutput {
+  costUsd: number;
+  pricingSnapshotId?: string;
+  costSource: "exact" | "estimated" | "unavailable";
+  calculatedAt: Date;
 }
 
 export interface ChatStreamChunk { content: string; done?: boolean; }

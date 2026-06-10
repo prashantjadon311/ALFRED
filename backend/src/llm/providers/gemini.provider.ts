@@ -1,8 +1,8 @@
 import { BadRequestException, Injectable } from "@nestjs/common";
 import { EncryptionService } from "../../security/encryption.service";
 import { LlmProvider } from "../interfaces/llm-provider.interface";
-import { ChatInput, ChatOutput } from "../interfaces/llm.types";
-import { assertProviderResponse, estimateTokens, joinUrl, readJson } from "./http-provider.utils";
+import { ChatInput, ProviderChatOutput } from "../interfaces/llm.types";
+import { assertProviderResponse, estimateTokens, joinUrl, normalizeProviderUsage, readJson } from "./http-provider.utils";
 
 @Injectable()
 export class GeminiProvider implements LlmProvider {
@@ -12,7 +12,7 @@ export class GeminiProvider implements LlmProvider {
 
   constructor(private readonly encryption: EncryptionService) {}
 
-  async chat(input: ChatInput): Promise<ChatOutput> {
+  async chat(input: ChatInput): Promise<ProviderChatOutput> {
     const started = Date.now();
     const modelName = input.modelName ?? this.defaultModel;
     const apiKey = this.decryptRequiredApiKey(input.encryptedApiKey);
@@ -32,13 +32,23 @@ export class GeminiProvider implements LlmProvider {
     assertProviderResponse(response, this.providerType);
     const parts = json?.candidates?.[0]?.content?.parts;
     const content = Array.isArray(parts) ? parts.map((part: any) => part?.text ?? "").join("") : "";
+    const reasoningTokens = typeof json?.usageMetadata?.thoughtsTokenCount === "number" ? json.usageMetadata.thoughtsTokenCount : undefined;
+    const reportedOutputTokens = typeof json?.usageMetadata?.candidatesTokenCount === "number"
+      ? json.usageMetadata.candidatesTokenCount + (reasoningTokens ?? 0)
+      : undefined;
+    const usage = normalizeProviderUsage({
+      reportedInputTokens: json?.usageMetadata?.promptTokenCount,
+      reportedOutputTokens,
+      cachedInputTokens: json?.usageMetadata?.cachedContentTokenCount,
+      reasoningTokens,
+      estimatedInputText: `${input.systemPrompt ?? ""}\n${input.prompt}`,
+      estimatedOutputText: content
+    });
     return {
       content,
       providerType: this.providerType,
       modelName,
-      inputTokens: json?.usageMetadata?.promptTokenCount ?? estimateTokens(`${input.systemPrompt ?? ""}\n${input.prompt}`),
-      outputTokens: json?.usageMetadata?.candidatesTokenCount ?? estimateTokens(content),
-      costUsd: 0,
+      ...usage,
       latencyMs: Date.now() - started,
       raw: { usageMetadata: json?.usageMetadata }
     };

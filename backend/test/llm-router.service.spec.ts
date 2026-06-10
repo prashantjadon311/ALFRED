@@ -40,6 +40,13 @@ function makeRouter(options: { providerDoc?: any; modelDoc?: any } = {}) {
   const aiModels = {
     findByName: jest.fn(async () => options.modelDoc ?? null)
   };
+  const pricing = {
+    calculateCost: jest.fn(async ({ usage }: any) => ({
+      costUsd: usage.usageSource === "exact" ? 0.000034 : 0.00001,
+      pricingSnapshotId: "507f1f77bcf86cd799439011",
+      costSource: usage.usageSource
+    }))
+  };
   return new LlmRouterService(
     providers.mock,
     providers.openai,
@@ -48,7 +55,8 @@ function makeRouter(options: { providerDoc?: any; modelDoc?: any } = {}) {
     providers.ollama,
     providers.customOpenai,
     modelProviders as any,
-    aiModels as any
+    aiModels as any,
+    pricing as any
   );
 }
 

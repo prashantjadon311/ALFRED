@@ -26,6 +26,7 @@ import { RequirementDriftService } from "./requirement-drift.service";
 import { AgentPromptBuilderService } from "./agent-prompt-builder.service";
 import { WorkflowContextBuilderService } from "./workflow-context-builder.service";
 import { CritiqueResolutionService } from "./critique-resolution.service";
+import { PricingService } from "../modules/pricing/pricing.service";
 
 export interface WorkflowTraversalState {
   iteration: number;
@@ -116,6 +117,7 @@ export class WorkflowOrchestratorService {
     private readonly resolver: CritiqueResolutionService,
     private readonly llm: LlmRouterService,
     private readonly budget: BudgetService,
+    private readonly pricing: PricingService,
     private readonly usage: UsageService,
     private readonly bus: RealtimeEventBus
   ) {}
@@ -334,7 +336,15 @@ export class WorkflowOrchestratorService {
     if (node.type !== "requirement_lock") {
       const estimatedInputTokens = await this.llm.estimateTokens(prompt);
       const estimatedOutputTokens = Math.min(node.budget?.maxTokens ?? 1200, 4000);
-      const estimatedCostUsd = this.budget.calculateCost(estimatedInputTokens, estimatedOutputTokens);
+      const estimate = await this.pricing.calculateCost({
+        providerType: (process.env.LLM_MOCK_MODE ?? "true") === "true" ? "mock" : node.providerPreference ?? "mock",
+        modelName: node.modelPreference ?? this.mockModelForNode(nodeKey),
+        usage: { inputTokens: estimatedInputTokens, outputTokens: estimatedOutputTokens, usageSource: "estimated" },
+        requestedAt: started
+      });
+      const estimatedCostUsd = estimate.costSource === "unavailable"
+        ? this.budget.calculateCost(estimatedInputTokens, estimatedOutputTokens)
+        : estimate.costUsd;
       const budgetDecision = this.budget.assertCanSpend(budget, estimatedInputTokens + estimatedOutputTokens, estimatedCostUsd);
       if (!budgetDecision.allowed) {
         await this.runs.updateStatus(runId, userId, "failed", { stopReason: "budget_exceeded", errorMessage: budgetDecision.reason });
@@ -346,8 +356,19 @@ export class WorkflowOrchestratorService {
     }
 
     const output = node.type === "requirement_lock"
-      ? { content: JSON.stringify({ locked: true, lockedGoal: requirement.lockedGoal }), inputTokens: 10, outputTokens: 12, costUsd: 0, latencyMs: 5, providerType: "mock", modelName: "Requirement Lock" }
-      : await this.llm.chat({ prompt, providerType: node.providerPreference ?? "mock", modelName: node.modelPreference, nodeKey, iteration: run.iteration, context });
+      ? {
+          content: JSON.stringify({ locked: true, lockedGoal: requirement.lockedGoal }),
+          inputTokens: 10,
+          outputTokens: 12,
+          usageSource: "estimated" as const,
+          costUsd: 0,
+          costSource: "unavailable" as const,
+          calculatedAt: new Date(),
+          latencyMs: 5,
+          providerType: "mock",
+          modelName: "Requirement Lock"
+        }
+      : await this.llm.chat({ prompt, providerType: node.providerPreference ?? "mock", modelName: node.modelPreference, userId: userId.toHexString(), nodeKey, iteration: run.iteration, context });
     const parsed = this.parser.parse(output.content);
     const execution = await this.executions.create({
       userId,
@@ -360,7 +381,13 @@ export class WorkflowOrchestratorService {
       structuredOutput: parsed.ok ? parsed.value : undefined,
       inputTokens: output.inputTokens,
       outputTokens: output.outputTokens,
+      cachedInputTokens: output.cachedInputTokens,
+      reasoningTokens: output.reasoningTokens,
       costUsd: output.costUsd,
+      pricingSnapshotId: output.pricingSnapshotId,
+      usageSource: output.usageSource,
+      costSource: output.costSource,
+      calculatedAt: output.calculatedAt,
       latencyMs: output.latencyMs,
       errorMessage: parsed.ok ? undefined : "structured_parse_failed",
       attempt: 1,
@@ -370,7 +397,25 @@ export class WorkflowOrchestratorService {
       createdAt: started
     } as any);
     previousOutputs.push({ nodeKey, output: output.content });
-    await this.usage.record({ userId, workspaceId: run.workspaceId, projectId: run.projectId, workflowRunId: runId, providerType: output.providerType, modelName: output.modelName, inputTokens: output.inputTokens, outputTokens: output.outputTokens, costUsd: output.costUsd, latencyMs: output.latencyMs, source: "workflow" });
+    await this.usage.record({
+      userId,
+      workspaceId: run.workspaceId,
+      projectId: run.projectId,
+      workflowRunId: runId,
+      providerType: output.providerType,
+      modelName: output.modelName,
+      inputTokens: output.inputTokens,
+      outputTokens: output.outputTokens,
+      cachedInputTokens: output.cachedInputTokens,
+      reasoningTokens: output.reasoningTokens,
+      costUsd: output.costUsd,
+      pricingSnapshotId: output.pricingSnapshotId,
+      usageSource: output.usageSource,
+      costSource: output.costSource,
+      calculatedAt: output.calculatedAt,
+      latencyMs: output.latencyMs,
+      source: "workflow"
+    });
     const updatedRun = await this.runs.findById(runId, userId);
     if (updatedRun) {
       const updatedBudget = this.buildBudgetSnapshot(updatedRun);
@@ -393,8 +438,8 @@ export class WorkflowOrchestratorService {
     }
     await this.agentMessages.create({ userId, workflowRunId: runId, iteration: run.iteration, fromAgent: nodeKey, nodeKey, messageType: node.type === "critic" ? "critique" : "proposal", content: output.content, createdAt: new Date() } as any);
     await this.emit(userId, runId, "agent.message.created", { projectId: run.projectId, nodeKey, data: { content: output.content.slice(0, 1000) } });
-    await this.emit(userId, runId, "agent.execution.completed", { projectId: run.projectId, nodeKey, data: { executionId: execution!._id!.toHexString(), inputTokens: output.inputTokens, outputTokens: output.outputTokens, costUsd: output.costUsd } });
-    await this.emit(userId, runId, "node.status.changed", { projectId: run.projectId, nodeKey, data: { status: "completed", inputTokens: output.inputTokens, outputTokens: output.outputTokens, costUsd: output.costUsd } });
+    await this.emit(userId, runId, "agent.execution.completed", { projectId: run.projectId, nodeKey, data: { executionId: execution!._id!.toHexString(), inputTokens: output.inputTokens, outputTokens: output.outputTokens, costUsd: output.costUsd, usageSource: output.usageSource, costSource: output.costSource } });
+    await this.emit(userId, runId, "node.status.changed", { projectId: run.projectId, nodeKey, data: { status: "completed", inputTokens: output.inputTokens, outputTokens: output.outputTokens, costUsd: output.costUsd, usageSource: output.usageSource, costSource: output.costSource } });
     return execution!;
   }
 
@@ -422,5 +467,12 @@ export class WorkflowOrchestratorService {
     for (const warning of budgetState.warnings) {
       await this.emit(userId, workflowRunId, "budget.warning", { projectId, data: { warning, mode: budgetState.mode } });
     }
+  }
+
+  private mockModelForNode(nodeKey: string) {
+    if (nodeKey.includes("claude")) return "Mock Claude Opus";
+    if (nodeKey.includes("gemini")) return "Mock Gemini";
+    if (nodeKey.includes("codex")) return "Mock GPT-5 Codex";
+    return "Mock GPT-5";
   }
 }

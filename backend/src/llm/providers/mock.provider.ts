@@ -1,12 +1,12 @@
 import { Injectable } from "@nestjs/common";
 import { LlmProvider } from "../interfaces/llm-provider.interface";
-import { ChatInput, ChatOutput } from "../interfaces/llm.types";
+import { ChatInput, ProviderChatOutput } from "../interfaces/llm.types";
 
 @Injectable()
 export class MockLlmProvider implements LlmProvider {
   providerType: LlmProvider["providerType"] = "mock";
 
-  async chat(input: ChatInput): Promise<ChatOutput> {
+  async chat(input: ChatInput): Promise<ProviderChatOutput> {
     const started = Date.now();
     const content = this.mockContent(input);
     const inputTokens = await this.estimateTokens(`${input.systemPrompt ?? ""}\n${input.prompt}`);
@@ -17,7 +17,7 @@ export class MockLlmProvider implements LlmProvider {
       modelName: input.modelName ?? this.modelForNode(input.nodeKey),
       inputTokens,
       outputTokens,
-      costUsd: Number(((inputTokens * 0.000002) + (outputTokens * 0.000006)).toFixed(6)),
+      usageSource: "estimated",
       latencyMs: Date.now() - started + 120
     };
   }
