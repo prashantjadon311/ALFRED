@@ -17,6 +17,27 @@ describe("assertProductionSecrets", () => {
     expect(() => assertProductionSecrets(validProductionEnv)).not.toThrow();
   });
 
+  it("accepts FRONTEND_URLS as the frontend configuration", () => {
+    const { FRONTEND_URL: _frontendUrl, ...env } = validProductionEnv;
+    expect(() => assertProductionSecrets({ ...env, FRONTEND_URLS: "https://one.example.com,https://two.example.com" })).not.toThrow();
+  });
+
+  it("rejects SameSite=None with explicitly insecure cookies", () => {
+    expect(() => assertProductionSecrets({
+      ...validProductionEnv,
+      AUTH_REFRESH_COOKIE_SAME_SITE: "none",
+      AUTH_REFRESH_COOKIE_SECURE: "false"
+    })).toThrow(/AUTH_REFRESH_COOKIE_SECURE/);
+  });
+
+  it("accepts SameSite=None with secure cookies", () => {
+    expect(() => assertProductionSecrets({
+      ...validProductionEnv,
+      AUTH_REFRESH_COOKIE_SAME_SITE: "none",
+      AUTH_REFRESH_COOKIE_SECURE: "true"
+    })).not.toThrow();
+  });
+
   it("rejects missing, default, and short production values", () => {
     expect(() =>
       assertProductionSecrets({

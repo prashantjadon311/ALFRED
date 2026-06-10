@@ -19,4 +19,10 @@ export class UsersRepository extends BaseRepository<UserDoc> {
   updateRefreshToken(userId: ObjectId, refreshTokenHash?: string) {
     return this.collection().updateOne({ _id: userId }, refreshTokenHash ? { $set: { refreshTokenHash, updatedAt: new Date() } } : { $unset: { refreshTokenHash: "" }, $set: { updatedAt: new Date() } });
   }
+  rotateRefreshToken(userId: ObjectId, currentRefreshTokenHash: string, refreshTokenHash: string) {
+    return this.collection().updateOne(
+      { _id: userId, refreshTokenHash: currentRefreshTokenHash },
+      { $set: { refreshTokenHash, updatedAt: new Date() } }
+    );
+  }
 }

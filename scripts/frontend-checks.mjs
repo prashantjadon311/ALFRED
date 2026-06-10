@@ -136,4 +136,18 @@ reset.name = "Changed copy";
 assert.equal(baseDsl.name, "Editor checks");
 assert.deepEqual(JSON.parse(serializeWorkflowDsl(baseDsl)), baseDsl);
 
+const apiClientSource = fs.readFileSync(path.join(root, "src/lib/api-client.ts"), "utf8");
+assert.ok(!apiClientSource.includes("alfred_access_token"));
+assert.ok(!apiClientSource.includes("alfred_refresh_token"));
+assert.ok(apiClientSource.includes('credentials: "include"'));
+assert.ok(apiClientSource.includes("refreshPromise"));
+assert.equal((apiClientSource.match(/!retried/g) ?? []).length, 1);
+
+for (const relativePath of ["src/services/auth-service.ts", "src/store/auth-store.ts"]) {
+  const source = fs.readFileSync(path.join(root, relativePath), "utf8");
+  for (const removedImport of ["setTokens", "clearTokens", "getToken"]) {
+    assert.ok(!source.includes(removedImport), `${relativePath} should not reference ${removedImport}`);
+  }
+}
+
 console.log("Frontend confidence checks passed.");

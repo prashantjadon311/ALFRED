@@ -9,6 +9,7 @@ import { ObjectId } from "mongodb";
 import { AppModule } from "../src/app.module";
 import { GlobalExceptionFilter } from "../src/common/filters/global-exception.filter";
 import { DatabaseService } from "../src/database/database.service";
+import cookie from "@fastify/cookie";
 
 const redisUrl = "redis://localhost:6379/15";
 const testDbName = `alfred_e2e_${Date.now()}`;
@@ -42,6 +43,7 @@ describe("A.L.F.R.E.D. HTTP vertical slice", () => {
 
     const moduleRef = await NestTest.createTestingModule({ imports: [AppModule] }).compile();
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter({ logger: false }));
+    await (app as NestFastifyApplication).register(cookie as never);
     app.useGlobalFilters(new GlobalExceptionFilter());
     await app.init();
     await app.getHttpAdapter().getInstance().ready();
@@ -102,6 +104,58 @@ describe("A.L.F.R.E.D. HTTP vertical slice", () => {
     expect(storedProvider?.encryptedApiKey).toBeTruthy();
     expect(storedProvider?.encryptedApiKey).not.toBe(rawApiKey);
     expect(storedProvider?.maskedApiKey).toBe(provider.body.data.maskedApiKey);
+  }, 30000);
+
+  it("uses an HttpOnly rotating refresh cookie and revokes it on logout", async () => {
+    const email = `cookie-session-${Date.now()}@alfred.local`;
+    const registered = await request(app.getHttpServer())
+      .post("/auth/register")
+      .send({ name: "Cookie Session Tester", email, password: "password123" })
+      .expect(201);
+
+    expect(registered.body.data.accessToken).toBeTruthy();
+    expect(registered.body.data.refreshToken).toBeUndefined();
+    expect(JSON.stringify(registered.body)).not.toContain("refreshToken");
+    const registerSetCookie = registered.headers["set-cookie"] as unknown as string[];
+    expect(registerSetCookie?.[0]).toContain("HttpOnly");
+    expect(registerSetCookie?.[0]).toContain("Path=/auth");
+    const firstCookie = registerSetCookie[0].split(";")[0];
+    const firstRefreshToken = firstCookie.slice(firstCookie.indexOf("=") + 1);
+
+    await request(app.getHttpServer())
+      .get("/auth/me")
+      .set("Authorization", `Bearer ${firstRefreshToken}`)
+      .expect(401);
+
+    const refreshed = await request(app.getHttpServer())
+      .post("/auth/refresh")
+      .set("Cookie", firstCookie)
+      .send({ refreshToken: "ignored-request-body-token" })
+      .expect(200);
+
+    expect(refreshed.body.data.accessToken).toBeTruthy();
+    expect(refreshed.body.data.accessToken).not.toBe(registered.body.data.accessToken);
+    expect(refreshed.body.data.refreshToken).toBeUndefined();
+    const refreshSetCookie = refreshed.headers["set-cookie"] as unknown as string[];
+    const rotatedCookie = refreshSetCookie[0].split(";")[0];
+    expect(rotatedCookie).not.toBe(firstCookie);
+
+    await request(app.getHttpServer())
+      .get("/auth/me")
+      .set("Authorization", `Bearer ${refreshed.body.data.accessToken}`)
+      .expect(200);
+
+    const loggedOut = await request(app.getHttpServer())
+      .post("/auth/logout")
+      .set("Cookie", rotatedCookie)
+      .expect(200);
+    expect(loggedOut.body.data).toEqual({ loggedOut: true });
+    expect((loggedOut.headers["set-cookie"] as unknown as string[])[0]).toMatch(/Max-Age=0|Expires=Thu, 01 Jan 1970/);
+
+    await request(app.getHttpServer())
+      .post("/auth/refresh")
+      .set("Cookie", rotatedCookie)
+      .expect(401);
   }, 30000);
 
   it("runs the real mock-mode workflow through BullMQ and persists graph, artifacts, issues, and usage", async () => {

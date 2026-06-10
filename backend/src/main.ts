@@ -2,6 +2,7 @@ import "reflect-metadata";
 import helmet from "@fastify/helmet";
 import cors from "@fastify/cors";
 import rateLimit from "@fastify/rate-limit";
+import cookie from "@fastify/cookie";
 import { ConfigService } from "@nestjs/config";
 import { NestFactory } from "@nestjs/core";
 import { FastifyAdapter, NestFastifyApplication } from "@nestjs/platform-fastify";
@@ -23,11 +24,15 @@ async function bootstrap() {
   const app = await NestFactory.create<NestFastifyApplication>(AppModule, adapter, { bufferLogs: true });
   const config = app.get(ConfigService);
 
+  await app.register(cookie as never);
   await app.register(helmet as never);
   await app.register(cors as never, {
     origin: (origin: string | undefined, cb: (err: Error | null, allow: boolean) => void) => {
-      // Allow any localhost port in development, plus configured frontend URL
-      const allowed = !origin || /^https?:\/\/localhost(:\d+)?$/.test(origin) || origin === (config.get<string>("frontendUrl") ?? "http://localhost:3000");
+      const nodeEnv = config.get<string>("nodeEnv") ?? "development";
+      const frontendOrigins = config.get<string[]>("frontendOrigins") ?? [];
+      const allowed = !origin
+        || frontendOrigins.includes(origin)
+        || (nodeEnv !== "production" && /^https?:\/\/localhost(:\d+)?$/.test(origin));
       cb(null, allowed);
     },
     credentials: true

@@ -8,22 +8,41 @@ export function AppInitializer() {
   const router = useRouter();
   const pathname = usePathname();
   const loadMe = useAuthStore((s) => s.loadMe);
+  const clearSession = useAuthStore((s) => s.clearSession);
   const hydrateWorkspaces = useWorkspaceStore((s) => s.hydrate);
   const initialized = useRef(false);
 
   useEffect(() => {
-    if (pathname === "/login" || pathname === "/signup") return;
+    const handleAuthExpired = () => {
+      clearSession();
+      router.replace("/login");
+    };
+    window.addEventListener("alfred:auth-expired", handleAuthExpired);
+    return () => window.removeEventListener("alfred:auth-expired", handleAuthExpired);
+  }, [clearSession, router]);
+
+  useEffect(() => {
+    if (pathname === "/login" || pathname === "/signup") {
+      initialized.current = false;
+      return;
+    }
     if (initialized.current) return;
     initialized.current = true;
-    hydrateWorkspaces();
+    let cancelled = false;
 
-    loadMe().then(() => {
-      const currentUser = useAuthStore.getState().user;
-      if (!currentUser && pathname !== "/login" && pathname !== "/signup") {
+    void loadMe().then(async () => {
+      if (cancelled) return;
+      if (useAuthStore.getState().user) {
+        await hydrateWorkspaces();
+      } else if (!cancelled) {
         router.replace("/login");
       }
     });
-  }, [pathname]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    return () => {
+      cancelled = true;
+    };
+  }, [hydrateWorkspaces, loadMe, pathname, router]);
 
   return null;
 }

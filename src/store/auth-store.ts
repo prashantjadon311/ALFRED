@@ -1,6 +1,6 @@
 "use client";
 import { create } from "zustand";
-import { clearTokens, getToken, isApiMode, setTokens } from "@/lib/api-client";
+import { clearAccessToken, isApiMode } from "@/lib/api-client";
 import { authService, type AuthUser } from "@/services/auth-service";
 
 const mockUser: AuthUser = { userId: "user-demo", email: "demo@alfred.local", name: "Prashant", role: "owner" };
@@ -8,20 +8,23 @@ const mockUser: AuthUser = { userId: "user-demo", email: "demo@alfred.local", na
 interface AuthStore {
   user: AuthUser | null;
   loading: boolean;
+  initialized: boolean;
   register: (name: string, email: string, password: string) => Promise<void>;
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   loadMe: () => Promise<void>;
+  clearSession: () => void;
 }
 
 export const useAuthStore = create<AuthStore>((set) => ({
   user: null,
   loading: false,
+  initialized: false,
 
   register: async (name, email, password) => {
     set({ loading: true });
     try {
-      set({ user: await authService.register(name, email, password) });
+      set({ user: await authService.register(name, email, password), initialized: true });
     } finally {
       set({ loading: false });
     }
@@ -30,33 +33,35 @@ export const useAuthStore = create<AuthStore>((set) => ({
   login: async (email, password) => {
     set({ loading: true });
     try {
-      set({ user: await authService.login(email, password) });
+      set({ user: await authService.login(email, password), initialized: true });
     } finally {
       set({ loading: false });
     }
   },
 
   logout: async () => {
-    await authService.logout();
-    set({ user: null });
+    try {
+      await authService.logout();
+    } finally {
+      set({ user: null, initialized: true });
+    }
   },
 
   loadMe: async () => {
     if (typeof window === "undefined") return;
-    if (!getToken() && !isApiMode()) setTokens();
-    if (!getToken() && isApiMode()) {
-      set({ user: null });
-      return;
-    }
+    set({ loading: true });
     try {
-      set({ user: await authService.me() });
+      set({ user: isApiMode() ? await authService.restoreSession() : mockUser });
     } catch {
-      if (isApiMode()) {
-        clearTokens();
-        set({ user: null });
-        return;
-      }
-      set({ user: mockUser });
+      clearAccessToken();
+      set({ user: null });
+    } finally {
+      set({ loading: false, initialized: true });
     }
+  },
+
+  clearSession: () => {
+    clearAccessToken();
+    set({ user: null, initialized: true });
   }
 }));

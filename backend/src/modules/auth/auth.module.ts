@@ -4,6 +4,8 @@ import { RepositoriesModule } from "../../repositories/repositories.module";
 import { AuthController } from "./auth.controller";
 import { AuthService } from "./auth.service";
 import { UserProvisioningService } from "./user-provisioning.service";
+import { AuthCookieService } from "./auth-cookie.service";
+import { AuthOriginGuard } from "./auth-origin.guard";
 
-@Module({ imports: [RepositoriesModule, JwtModule.register({ global: true })], controllers: [AuthController], providers: [AuthService, UserProvisioningService], exports: [AuthService, JwtModule] })
+@Module({ imports: [RepositoriesModule, JwtModule.register({ global: true })], controllers: [AuthController], providers: [AuthService, UserProvisioningService, AuthCookieService, AuthOriginGuard], exports: [AuthService, JwtModule] })
 export class AuthModule {}

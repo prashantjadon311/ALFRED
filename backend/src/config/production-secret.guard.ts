@@ -21,7 +21,10 @@ export function assertProductionSecrets(env: Env = process.env) {
   if (isWeakSecret(env.JWT_ACCESS_SECRET)) failures.push("JWT_ACCESS_SECRET");
   if (isWeakSecret(env.JWT_REFRESH_SECRET)) failures.push("JWT_REFRESH_SECRET");
   if (isWeakSecret(env.ENCRYPTION_KEY)) failures.push("ENCRYPTION_KEY");
-  if (!env.FRONTEND_URL?.trim()) failures.push("FRONTEND_URL");
+  if (!env.FRONTEND_URLS?.trim() && !env.FRONTEND_URL?.trim()) failures.push("FRONTEND_URL or FRONTEND_URLS");
+  if (env.AUTH_REFRESH_COOKIE_SAME_SITE?.trim().toLowerCase() === "none" && env.AUTH_REFRESH_COOKIE_SECURE?.trim().toLowerCase() === "false") {
+    failures.push("AUTH_REFRESH_COOKIE_SECURE");
+  }
 
   if (failures.length) {
     throw new Error(`Production configuration is unsafe: ${failures.join(", ")} must be set to non-default values.`);

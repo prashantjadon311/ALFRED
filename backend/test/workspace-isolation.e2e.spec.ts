@@ -8,6 +8,7 @@ import IORedis from "ioredis";
 import { AppModule } from "../src/app.module";
 import { GlobalExceptionFilter } from "../src/common/filters/global-exception.filter";
 import { DatabaseService } from "../src/database/database.service";
+import cookie from "@fastify/cookie";
 
 const redisUrl = "redis://localhost:6379/15";
 const testDbName = `alfred_workspace_${Date.now()}`;
@@ -39,6 +40,7 @@ describe("A.L.F.R.E.D. workspace isolation and provisioning", () => {
 
     const moduleRef = await NestTest.createTestingModule({ imports: [AppModule] }).compile();
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter({ logger: false }));
+    await (app as NestFastifyApplication).register(cookie as never);
     app.useGlobalFilters(new GlobalExceptionFilter());
     await app.init();
     await app.getHttpAdapter().getInstance().ready();
@@ -93,7 +95,7 @@ describe("A.L.F.R.E.D. workspace isolation and provisioning", () => {
   it("provisions defaults for a newly registered user", async () => {
     const email = `provisioned-${Date.now()}@alfred.local`;
     await register(email);
-    const login = await request(app.getHttpServer()).post("/auth/login").send({ email, password: "password123" }).expect(201);
+    const login = await request(app.getHttpServer()).post("/auth/login").send({ email, password: "password123" }).expect(200);
     const token = login.body.data.accessToken as string;
 
     await authed(token).get("/auth/me").expect(200).expect(({ body }) => {

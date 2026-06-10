@@ -8,6 +8,7 @@ import IORedis from "ioredis";
 import { AppModule } from "../src/app.module";
 import { GlobalExceptionFilter } from "../src/common/filters/global-exception.filter";
 import { DatabaseService } from "../src/database/database.service";
+import cookie from "@fastify/cookie";
 
 const redisUrl = "redis://localhost:6379/15";
 const testDbName = `alfred_isolation_${Date.now()}`;
@@ -41,6 +42,7 @@ describe("A.L.F.R.E.D. SaaS tenant isolation", () => {
 
     const moduleRef = await NestTest.createTestingModule({ imports: [AppModule] }).compile();
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter({ logger: false }));
+    await (app as NestFastifyApplication).register(cookie as never);
     app.useGlobalFilters(new GlobalExceptionFilter());
     await app.init();
     await app.getHttpAdapter().getInstance().ready();

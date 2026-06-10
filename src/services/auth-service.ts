@@ -1,4 +1,4 @@
-import { api, clearTokens, isApiMode, setTokens } from "@/lib/api-client";
+import { api, clearAccessToken, isApiMode, refreshAccessToken, setAccessToken } from "@/lib/api-client";
 import { demoWait } from "./mock-latency";
 
 export interface AuthUser {
@@ -24,11 +24,10 @@ export const authService = {
     if (!isApiMode()) {
       await demoWait(240);
       if (!name.trim() || !email.trim() || !password.trim()) throw new Error("Enter name, email, and password.");
-      setTokens();
       return { ...mockUser, name, email };
     }
-    const result = await api.post<{ user: any; accessToken: string; refreshToken: string }>("/auth/register", { name, email, password });
-    setTokens(result.accessToken, result.refreshToken);
+    const result = await api.post<{ user: any; accessToken: string }>("/auth/register", { name, email, password });
+    setAccessToken(result.accessToken);
     return normalizeUser(result.user);
   },
 
@@ -36,11 +35,16 @@ export const authService = {
     if (!isApiMode()) {
       await demoWait(240);
       if (!email.trim() || !password.trim()) throw new Error("Enter the mocked demo credentials.");
-      setTokens();
       return { ...mockUser, email };
     }
-    const result = await api.post<{ user: any; accessToken: string; refreshToken: string }>("/auth/login", { email, password });
-    setTokens(result.accessToken, result.refreshToken);
+    const result = await api.post<{ user: any; accessToken: string }>("/auth/login", { email, password });
+    setAccessToken(result.accessToken);
+    return normalizeUser(result.user);
+  },
+
+  restoreSession: async (): Promise<AuthUser> => {
+    if (!isApiMode()) return mockUser;
+    const result = await refreshAccessToken();
     return normalizeUser(result.user);
   },
 
@@ -50,13 +54,11 @@ export const authService = {
   },
 
   logout: async () => {
-    if (isApiMode()) {
-      try {
-        await api.post("/auth/logout");
-      } catch {
-        // Local token cleanup still wins if the session already expired.
-      }
+    if (!isApiMode()) return;
+    try {
+      await api.post("/auth/logout");
+    } finally {
+      clearAccessToken();
     }
-    clearTokens();
   }
 };
