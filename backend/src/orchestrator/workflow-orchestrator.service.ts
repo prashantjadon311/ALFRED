@@ -240,7 +240,7 @@ export class WorkflowOrchestratorService {
     const drift = this.drift.check({ ...requirement, output: execution.output ?? "" });
     if (criticOutput.requirementDriftDetected || drift.driftDetected) {
       await this.emit(userId, runId, "workflow.drift_detected", { projectId: run.projectId, data: drift });
-      const approval = await this.approvals.create({ userId, projectId: run.projectId, workflowRunId: runId, type: "requirement_drift_override", status: "pending", title: "Requirement drift detected", description: drift.reason, payload: drift, requestedBy: node.key, createdAt: new Date() } as any);
+      const approval = await this.approvals.create({ userId, workspaceId: run.workspaceId, projectId: run.projectId, workflowRunId: runId, type: "requirement_drift_override", status: "pending", title: "Requirement drift detected", description: drift.reason, payload: drift, requestedBy: node.key, createdAt: new Date() } as any);
       await this.emit(userId, runId, "approval.required", { projectId: run.projectId, data: { approvalRequestId: approval!._id!.toHexString(), type: "requirement_drift_override" } });
       await this.runs.updateStatus(runId, userId, "needs_human_review", { stopReason: "requirement_drift" });
       state.completed = true;
@@ -307,7 +307,7 @@ export class WorkflowOrchestratorService {
   }
 
   private async requestHumanReview(userId: ObjectId, runId: ObjectId, run: WorkflowRunDoc, state: WorkflowTraversalState, stopReason: string, description: string) {
-    const approval = await this.approvals.create({ userId, projectId: run.projectId, workflowRunId: runId, type: "final_output_approval", status: "pending", title: "Workflow needs human review", description, requestedBy: "workflow_orchestrator", createdAt: new Date() } as any);
+    const approval = await this.approvals.create({ userId, workspaceId: run.workspaceId, projectId: run.projectId, workflowRunId: runId, type: "final_output_approval", status: "pending", title: "Workflow needs human review", description, requestedBy: "workflow_orchestrator", createdAt: new Date() } as any);
     await this.emit(userId, runId, "approval.required", { projectId: run.projectId, data: { approvalRequestId: approval!._id!.toHexString(), type: "final_output_approval" } });
     await this.runs.updateStatus(runId, userId, "needs_human_review", { stopReason });
     await this.emit(userId, runId, "run.needs_human_review", { projectId: run.projectId, data: { iteration: state.iteration, stopReason } });

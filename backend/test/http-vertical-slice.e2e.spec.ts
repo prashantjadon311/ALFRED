@@ -189,6 +189,124 @@ describe("A.L.F.R.E.D. HTTP vertical slice", () => {
       .expect(401);
   }, 30000);
 
+  it("scopes settings, approvals, and approval audits by workspace", async () => {
+    const email = `scope-phase0c-${Date.now()}@alfred.local`;
+    const registered = await request(app.getHttpServer())
+      .post("/auth/register")
+      .send({ name: "Scope Phase 0C Tester", email, password: "password123" })
+      .expect(201);
+    const token = registered.body.data.accessToken as string;
+    const scopedUserId = new ObjectId(registered.body.data.user.id);
+    const withScopeAuth = (testRequest: SupertestRequest) =>
+      testRequest.set("Authorization", `Bearer ${token}`);
+    const scoped = {
+      get: (path: string) => withScopeAuth(request(app.getHttpServer()).get(path)),
+      post: (path: string) => withScopeAuth(request(app.getHttpServer()).post(path)),
+      patch: (path: string) => withScopeAuth(request(app.getHttpServer()).patch(path))
+    };
+
+    const workspaceA = await scoped
+      .post("/workspaces")
+      .send({ name: "Scope Workspace A", active: true })
+      .expect(201);
+    const workspaceB = await scoped
+      .post("/workspaces")
+      .send({ name: "Scope Workspace B", active: true })
+      .expect(201);
+    const workspaceAId = workspaceA.body.data.id as string;
+    const workspaceBId = workspaceB.body.data.id as string;
+
+    await scoped
+      .patch("/settings?scope=user")
+      .set("X-Workspace-Id", workspaceAId)
+      .send({ theme: "dark", defaultModel: "user-model" })
+      .expect(200);
+
+    await scoped
+      .patch("/settings?scope=workspace")
+      .set("X-Workspace-Id", workspaceAId)
+      .send({ defaultModel: "workspace-a-model" })
+      .expect(200);
+
+    await scoped
+      .get("/settings")
+      .set("X-Workspace-Id", workspaceAId)
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.data).toEqual(expect.objectContaining({
+          theme: "dark",
+          defaultModel: "workspace-a-model"
+        }));
+      });
+
+    await scoped
+      .get("/settings")
+      .set("X-Workspace-Id", workspaceBId)
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.data).toEqual(expect.objectContaining({
+          theme: "dark",
+          defaultModel: "user-model"
+        }));
+      });
+
+    const approvalId = new ObjectId();
+    await db.db().collection("approval_requests").insertOne({
+      _id: approvalId,
+      userId: scopedUserId,
+      workspaceId: new ObjectId(workspaceAId),
+      type: "manual_review",
+      status: "pending",
+      title: "Workspace A approval",
+      description: "Verify workspace isolation",
+      requestedBy: "e2e",
+      createdAt: new Date(),
+      updatedAt: new Date()
+    });
+
+    await scoped
+      .get("/approvals")
+      .set("X-Workspace-Id", workspaceBId)
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.data.some((item: { id: string }) => item.id === approvalId.toHexString())).toBe(false);
+      });
+
+    await scoped
+      .post(`/approvals/${approvalId.toHexString()}/approve`)
+      .set("X-Workspace-Id", workspaceBId)
+      .send({ reason: "wrong workspace" })
+      .expect(404);
+
+    await scoped
+      .post(`/approvals/${approvalId.toHexString()}/approve`)
+      .set("X-Workspace-Id", workspaceAId)
+      .send({ reason: "approved in workspace A" })
+      .expect(201);
+
+    await scoped
+      .get("/audit-logs")
+      .set("X-Workspace-Id", workspaceAId)
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.data.some((item: { action: string; entityId?: string }) =>
+          item.action === "approval_approved" &&
+          item.entityId === approvalId.toHexString()
+        )).toBe(true);
+      });
+
+    await scoped
+      .get("/audit-logs")
+      .set("X-Workspace-Id", workspaceBId)
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.data.some((item: { action: string; entityId?: string }) =>
+          item.action === "approval_approved" &&
+          item.entityId === approvalId.toHexString()
+        )).toBe(false);
+      });
+  }, 30000);
+
   it("runs the real mock-mode workflow through BullMQ and persists graph, artifacts, issues, and usage", async () => {
     const project = await authed()
       .post("/projects")

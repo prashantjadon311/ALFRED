@@ -14,33 +14,40 @@ export class ApprovalsService {
     private readonly bus: RealtimeEventBus
   ) {}
 
-  async list(userId: ObjectId, page: number, limit: number, status?: string) {
+  async list(userId: ObjectId, workspaceId: ObjectId, page: number, limit: number, status?: string) {
     const filter: Record<string, unknown> = {};
     if (status) filter.status = status;
-    const result = await this.repo.listByUser(userId, filter as any, { skip: (page - 1) * limit, limit });
+    const result = await this.repo.listByWorkspace(userId, workspaceId, filter as any, { skip: (page - 1) * limit, limit });
     return { items: this.repo.serializeMany(result.items), total: result.total };
   }
 
-  async get(userId: ObjectId, id: ObjectId) {
-    const doc = await this.repo.findById(id, userId);
+  async get(userId: ObjectId, workspaceId: ObjectId, id: ObjectId) {
+    const doc = await this.repo.findByIdForWorkspace(id, userId, workspaceId);
     if (!doc) throw new NotFoundException("Approval request not found");
     return this.repo.serialize(doc);
   }
 
-  async approve(userId: ObjectId, id: ObjectId, reason?: string) {
-    return this.decide(userId, id, "approved", reason);
+  async approve(userId: ObjectId, workspaceId: ObjectId, id: ObjectId, reason?: string) {
+    return this.decide(userId, workspaceId, id, "approved", reason);
   }
 
-  async reject(userId: ObjectId, id: ObjectId, reason?: string) {
-    return this.decide(userId, id, "rejected", reason);
+  async reject(userId: ObjectId, workspaceId: ObjectId, id: ObjectId, reason?: string) {
+    return this.decide(userId, workspaceId, id, "rejected", reason);
   }
 
-  private async decide(userId: ObjectId, id: ObjectId, status: "approved" | "rejected", reason?: string) {
-    const doc = await this.repo.findById(id, userId);
+  private async decide(userId: ObjectId, workspaceId: ObjectId, id: ObjectId, status: "approved" | "rejected", reason?: string) {
+    const doc = await this.repo.findByIdForWorkspace(id, userId, workspaceId);
     if (!doc) throw new NotFoundException("Approval request not found");
     if (doc.status !== "pending") throw new BadRequestException(`Approval is already ${doc.status}`);
-    const updated = await this.repo.updateById(id, userId, { status, approvedBy: userId.toHexString(), decisionReason: reason, decidedAt: new Date() } as any);
-    await this.audit.audit({ userId, entityType: "approval_request", entityId: id.toHexString(), action: `approval_${status}`, metadata: { reason } });
+    const updated = await this.repo.updateDecision(id, userId, workspaceId, { status, approvedBy: userId, decisionReason: reason, decidedAt: new Date() });
+    await this.audit.audit({
+      userId,
+      workspaceId,
+      entityType: "approval_request",
+      entityId: id.toHexString(),
+      action: `approval_${status}`,
+      metadata: { reason }
+    });
     if (doc.workflowRunId && doc.projectId) {
       const event = await this.events.create({
         userId,

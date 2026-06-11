@@ -11,7 +11,8 @@
     "test:e2e": "node ../scripts/dev-infra.js && jest --config ./test/jest-e2e.json --runInBand --detectOpenHandles",
     "lint": "eslint \"src/**/*.ts\" \"test/**/*.ts\"",
     "seed": "ts-node src/database/seed.ts",
-    "indexes": "ts-node src/database/create-indexes.ts"
+    "indexes": "ts-node src/database/create-indexes.ts",
+    "migrate:scope-phase0c": "ts-node src/database/migrations/20260611_scope_settings_approvals_audit.ts"
   },
   "dependencies": {
     "@fastify/cookie": "^9.4.0",

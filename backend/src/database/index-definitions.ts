@@ -100,10 +100,27 @@ export async function ensureMongoIndexes(db: Db) {
 
     db.collection("approval_requests").createIndex({ userId: 1, status: 1 }),
     db.collection("approval_requests").createIndex({ workflowRunId: 1 }),
+    db.collection("approval_requests").createIndex({ userId: 1, workspaceId: 1, status: 1 }),
+    db.collection("approval_requests").createIndex({ userId: 1, workspaceId: 1, workflowRunId: 1 }),
 
     db.collection("audit_logs").createIndex({ userId: 1, createdAt: -1 }),
     db.collection("audit_logs").createIndex({ entityType: 1, entityId: 1 }),
+    db.collection("audit_logs").createIndex({ userId: 1, workspaceId: 1, createdAt: -1 }),
+    db.collection("audit_logs").createIndex({ userId: 1, workspaceId: 1, entityType: 1, entityId: 1 }),
 
-    db.collection("settings").createIndex({ userId: 1, key: 1 }, { unique: true })
+    db.collection("settings").createIndex(
+      { userId: 1, scopeType: 1, key: 1 },
+      {
+        unique: true,
+        partialFilterExpression: { scopeType: "user" }
+      }
+    ),
+    db.collection("settings").createIndex(
+      { userId: 1, workspaceId: 1, scopeType: 1, key: 1 },
+      {
+        unique: true,
+        partialFilterExpression: { scopeType: "workspace" }
+      }
+    )
   ]);
 }
