@@ -116,10 +116,19 @@ describe("A.L.F.R.E.D. HTTP vertical slice", () => {
     expect(registered.body.data.accessToken).toBeTruthy();
     expect(registered.body.data.refreshToken).toBeUndefined();
     expect(JSON.stringify(registered.body)).not.toContain("refreshToken");
+    expect(registered.headers["cache-control"]).toContain("no-store");
     const registerSetCookie = registered.headers["set-cookie"] as unknown as string[];
     expect(registerSetCookie?.[0]).toContain("HttpOnly");
     expect(registerSetCookie?.[0]).toContain("Path=/auth");
-    const firstCookie = registerSetCookie[0].split(";")[0];
+
+    const loggedIn = await request(app.getHttpServer())
+      .post("/auth/login")
+      .send({ email, password: "password123" })
+      .expect(200);
+    expect(loggedIn.headers["cache-control"]).toContain("no-store");
+    const firstCookie = (
+      loggedIn.headers["set-cookie"] as unknown as string[]
+    )[0].split(";")[0];
     const firstRefreshToken = firstCookie.slice(firstCookie.indexOf("=") + 1);
 
     await request(app.getHttpServer())
@@ -130,9 +139,9 @@ describe("A.L.F.R.E.D. HTTP vertical slice", () => {
     const refreshed = await request(app.getHttpServer())
       .post("/auth/refresh")
       .set("Cookie", firstCookie)
-      .send({ refreshToken: "ignored-request-body-token" })
       .expect(200);
 
+    expect(refreshed.headers["cache-control"]).toContain("no-store");
     expect(refreshed.body.data.accessToken).toBeTruthy();
     expect(refreshed.body.data.accessToken).not.toBe(registered.body.data.accessToken);
     expect(refreshed.body.data.refreshToken).toBeUndefined();
@@ -141,20 +150,42 @@ describe("A.L.F.R.E.D. HTTP vertical slice", () => {
     expect(rotatedCookie).not.toBe(firstCookie);
 
     await request(app.getHttpServer())
+      .post("/auth/refresh")
+      .set("Cookie", firstCookie)
+      .expect(401)
+      .expect(({ body }) => {
+        expect(body.error.code).toBe(
+          "REFRESH_TOKEN_STALE"
+        );
+      });
+
+    const refreshedAgain = await request(
+      app.getHttpServer()
+    )
+      .post("/auth/refresh")
+      .set("Cookie", rotatedCookie)
+      .expect(200);
+    expect(refreshedAgain.headers["cache-control"]).toContain("no-store");
+
+    const newestCookie = (
+      refreshedAgain.headers["set-cookie"] as unknown as string[]
+    )[0].split(";")[0];
+
+    await request(app.getHttpServer())
       .get("/auth/me")
-      .set("Authorization", `Bearer ${refreshed.body.data.accessToken}`)
+      .set("Authorization", `Bearer ${refreshedAgain.body.data.accessToken}`)
       .expect(200);
 
     const loggedOut = await request(app.getHttpServer())
       .post("/auth/logout")
-      .set("Cookie", rotatedCookie)
+      .set("Cookie", newestCookie)
       .expect(200);
     expect(loggedOut.body.data).toEqual({ loggedOut: true });
     expect((loggedOut.headers["set-cookie"] as unknown as string[])[0]).toMatch(/Max-Age=0|Expires=Thu, 01 Jan 1970/);
 
     await request(app.getHttpServer())
       .post("/auth/refresh")
-      .set("Cookie", rotatedCookie)
+      .set("Cookie", newestCookie)
       .expect(401);
   }, 30000);
 
@@ -300,10 +331,16 @@ describe("A.L.F.R.E.D. HTTP vertical slice", () => {
     await expectCollectionCount("agent_executions", { userId: ownerObjectId, workflowRunId: workflowRunObjectId }, 8);
     await expectCollectionCount("agent_messages", { userId: ownerObjectId, workflowRunId: workflowRunObjectId }, 8);
     await expectCollectionCount("revision_patches", { userId: ownerObjectId, workflowRunId: workflowRunObjectId }, 1);
-    await expectCollectionCount("usage_events", { userId: ownerObjectId, workflowRunId: workflowRunObjectId }, 8);
+    await expectCollectionCount("usage_events", { userId: ownerObjectId, workflowRunId: workflowRunObjectId }, 7);
     const workflowUsage = await db.db().collection("usage_events").find({ userId: ownerObjectId, workflowRunId: workflowRunObjectId }).toArray();
     expect(workflowUsage.every((event) => event.usageSource && event.costSource && event.calculatedAt instanceof Date)).toBe(true);
-    expect(workflowUsage.some((event) => event.costSource === "unavailable" && event.costUsd === 0)).toBe(true);
+    expect(
+      workflowUsage.every(
+        (event) =>
+          event.costSource === "estimated" &&
+          event.pricingSnapshotId
+      )
+    ).toBe(true);
     expect(workflowUsage.reduce((sum, event) => sum + Number(event.inputTokens), 0)).toBe(run.totalInputTokens);
     expect(workflowUsage.reduce((sum, event) => sum + Number(event.outputTokens), 0)).toBe(run.totalOutputTokens);
     expect(workflowUsage.reduce((sum, event) => sum + Number(event.costUsd), 0)).toBeCloseTo(Number(run.totalCostUsd), 12);

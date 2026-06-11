@@ -61,6 +61,7 @@ export class LlmRouterService {
     const cost = await this.pricing.calculateCost({
       providerType: output.providerType,
       modelName: output.modelName,
+      requestedModelName: output.requestedModelName,
       usage: output,
       requestedAt
     });

@@ -15,16 +15,19 @@ export function normalizeProviderUsage(input: {
   estimatedInputText: string;
   estimatedOutputText: string;
   cachedInputTokens?: unknown;
+  cacheWriteInputTokens?: unknown;
   reasoningTokens?: unknown;
 }): NormalizedUsage {
   const reportedInputTokens = tokenCount(input.reportedInputTokens);
   const reportedOutputTokens = tokenCount(input.reportedOutputTokens);
   const cachedInputTokens = tokenCount(input.cachedInputTokens);
+  const cacheWriteInputTokens = tokenCount(input.cacheWriteInputTokens);
   const reasoningTokens = tokenCount(input.reasoningTokens);
   return {
     inputTokens: reportedInputTokens ?? estimateTokens(input.estimatedInputText),
     outputTokens: reportedOutputTokens ?? estimateTokens(input.estimatedOutputText),
     ...(cachedInputTokens !== undefined ? { cachedInputTokens } : {}),
+    ...(cacheWriteInputTokens !== undefined ? { cacheWriteInputTokens } : {}),
     ...(reasoningTokens !== undefined ? { reasoningTokens } : {}),
     usageSource: reportedInputTokens !== undefined && reportedOutputTokens !== undefined ? "exact" : "estimated"
   };

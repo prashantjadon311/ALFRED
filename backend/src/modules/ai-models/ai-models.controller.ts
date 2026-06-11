@@ -11,9 +11,7 @@ import { AiModelsService } from "./ai-models.service";
 const updateSchema = z.object({
   enabled: z.boolean().optional(),
   defaultRole: z.string().max(60).optional(),
-  displayName: z.string().max(80).optional(),
-  inputCostPer1k: z.number().min(0).optional(),
-  outputCostPer1k: z.number().min(0).optional()
+  displayName: z.string().max(80).optional()
 });
 
 @UseGuards(JwtAuthGuard)

@@ -17,6 +17,7 @@ export interface NormalizedUsage {
   inputTokens: number;
   outputTokens: number;
   cachedInputTokens?: number;
+  cacheWriteInputTokens?: number;
   reasoningTokens?: number;
   usageSource: "exact" | "estimated";
 }
@@ -25,6 +26,7 @@ export interface ProviderChatOutput extends NormalizedUsage {
   content: string;
   providerType: string;
   modelName: string;
+  requestedModelName?: string;
   latencyMs: number;
   raw?: unknown;
 }

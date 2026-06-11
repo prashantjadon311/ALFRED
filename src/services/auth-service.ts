@@ -55,10 +55,7 @@ export const authService = {
 
   logout: async () => {
     if (!isApiMode()) return;
-    try {
-      await api.post("/auth/logout");
-    } finally {
-      clearAccessToken();
-    }
+    await api.post("/auth/logout");
+    clearAccessToken();
   }
 };

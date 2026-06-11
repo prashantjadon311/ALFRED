@@ -24,6 +24,11 @@ export class AuthCookieService {
     reply.clearCookie(this.name(), this.options());
   }
 
+  applyNoStore(reply: FastifyReply) {
+    reply.header("Cache-Control", "no-store");
+    reply.header("Pragma", "no-cache");
+  }
+
   private name() {
     return this.config.get<string>("refreshCookieName") ?? "alfred_refresh_token";
   }

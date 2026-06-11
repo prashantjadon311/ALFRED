@@ -41,6 +41,7 @@ export class AnthropicProvider implements LlmProvider {
     const usage = normalizeProviderUsage({
       reportedInputTokens,
       reportedOutputTokens: json?.usage?.output_tokens,
+      cacheWriteInputTokens: json?.usage?.cache_creation_input_tokens,
       cachedInputTokens: json?.usage?.cache_read_input_tokens,
       estimatedInputText: `${input.systemPrompt ?? ""}\n${input.prompt}`,
       estimatedOutputText: content
@@ -49,6 +50,7 @@ export class AnthropicProvider implements LlmProvider {
       content,
       providerType: this.providerType,
       modelName: json?.model ?? modelName,
+      requestedModelName: modelName,
       ...usage,
       latencyMs: Date.now() - started,
       raw: { id: json?.id, model: json?.model, usage: json?.usage }

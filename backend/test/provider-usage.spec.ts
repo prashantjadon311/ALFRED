@@ -62,6 +62,7 @@ describe("provider usage normalization", () => {
     expect(result).toMatchObject({
       inputTokens: 150,
       outputTokens: 40,
+      cacheWriteInputTokens: 20,
       cachedInputTokens: 30,
       usageSource: "exact"
     });

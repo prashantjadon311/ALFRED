@@ -358,8 +358,8 @@ export class WorkflowOrchestratorService {
     const output = node.type === "requirement_lock"
       ? {
           content: JSON.stringify({ locked: true, lockedGoal: requirement.lockedGoal }),
-          inputTokens: 10,
-          outputTokens: 12,
+          inputTokens: 0,
+          outputTokens: 0,
           usageSource: "estimated" as const,
           costUsd: 0,
           costSource: "unavailable" as const,
@@ -382,6 +382,7 @@ export class WorkflowOrchestratorService {
       inputTokens: output.inputTokens,
       outputTokens: output.outputTokens,
       cachedInputTokens: output.cachedInputTokens,
+      cacheWriteInputTokens: output.cacheWriteInputTokens,
       reasoningTokens: output.reasoningTokens,
       costUsd: output.costUsd,
       pricingSnapshotId: output.pricingSnapshotId,
@@ -397,25 +398,28 @@ export class WorkflowOrchestratorService {
       createdAt: started
     } as any);
     previousOutputs.push({ nodeKey, output: output.content });
-    await this.usage.record({
-      userId,
-      workspaceId: run.workspaceId,
-      projectId: run.projectId,
-      workflowRunId: runId,
-      providerType: output.providerType,
-      modelName: output.modelName,
-      inputTokens: output.inputTokens,
-      outputTokens: output.outputTokens,
-      cachedInputTokens: output.cachedInputTokens,
-      reasoningTokens: output.reasoningTokens,
-      costUsd: output.costUsd,
-      pricingSnapshotId: output.pricingSnapshotId,
-      usageSource: output.usageSource,
-      costSource: output.costSource,
-      calculatedAt: output.calculatedAt,
-      latencyMs: output.latencyMs,
-      source: "workflow"
-    });
+    if (node.type !== "requirement_lock") {
+      await this.usage.record({
+        userId,
+        workspaceId: run.workspaceId,
+        projectId: run.projectId,
+        workflowRunId: runId,
+        providerType: output.providerType,
+        modelName: output.modelName,
+        inputTokens: output.inputTokens,
+        outputTokens: output.outputTokens,
+        cachedInputTokens: output.cachedInputTokens,
+        cacheWriteInputTokens: output.cacheWriteInputTokens,
+        reasoningTokens: output.reasoningTokens,
+        costUsd: output.costUsd,
+        pricingSnapshotId: output.pricingSnapshotId,
+        usageSource: output.usageSource,
+        costSource: output.costSource,
+        calculatedAt: output.calculatedAt,
+        latencyMs: output.latencyMs,
+        source: "workflow"
+      });
+    }
     const updatedRun = await this.runs.findById(runId, userId);
     if (updatedRun) {
       const updatedBudget = this.buildBudgetSnapshot(updatedRun);

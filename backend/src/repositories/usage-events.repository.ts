@@ -13,6 +13,7 @@ export interface UsageEventDoc extends OwnedDoc {
   inputTokens: number;
   outputTokens: number;
   cachedInputTokens?: number;
+  cacheWriteInputTokens?: number;
   reasoningTokens?: number;
   totalTokens: number;
   costUsd: number;

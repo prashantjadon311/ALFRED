@@ -57,4 +57,21 @@ describe("AuthCookieService", () => {
     const service = makeService({ refreshCookieName: "session" });
     expect(() => service.requireRefreshToken({ cookies: {} } as any)).toThrow(UnauthorizedException);
   });
+
+  it("adds no-store headers to token responses", () => {
+    const service = makeService({});
+    const reply = { header: jest.fn() };
+
+    service.applyNoStore(reply as any);
+
+    expect(reply.header).toHaveBeenCalledWith(
+      "Cache-Control",
+      "no-store"
+    );
+
+    expect(reply.header).toHaveBeenCalledWith(
+      "Pragma",
+      "no-cache"
+    );
+  });
 });

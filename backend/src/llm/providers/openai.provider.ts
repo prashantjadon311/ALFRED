@@ -49,6 +49,7 @@ export class OpenAiProvider implements LlmProvider {
       content,
       providerType: this.providerType,
       modelName: json?.model ?? modelName,
+      requestedModelName: modelName,
       ...usage,
       latencyMs: Date.now() - started,
       raw: { id: json?.id, model: json?.model, usage: json?.usage }

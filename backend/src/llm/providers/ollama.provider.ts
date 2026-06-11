@@ -42,6 +42,7 @@ export class OllamaProvider implements LlmProvider {
       content,
       providerType: this.providerType,
       modelName: json?.model ?? modelName,
+      requestedModelName: modelName,
       ...usage,
       latencyMs: Date.now() - started,
       raw: { model: json?.model, done: json?.done }

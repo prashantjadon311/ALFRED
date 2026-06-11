@@ -90,17 +90,49 @@ describe("AuthService secure sessions", () => {
     const { service, users } = makeService();
     users.rotateRefreshToken.mockResolvedValueOnce({ acknowledged: true, matchedCount: 0 });
 
-    await expect(service.refresh("current-refresh")).rejects.toThrow("Refresh token revoked");
+    await expect(service.refresh("current-refresh")).rejects.toMatchObject({
+      response: expect.objectContaining({
+        code: "REFRESH_TOKEN_STALE"
+      })
+    });
   });
 
-  it("revokes the session and audits valid-token reuse", async () => {
+  it("rejects a stale refresh token without revoking the current session", async () => {
     compareMock.mockResolvedValue(false as never);
     const { service, users, audit } = makeService();
 
-    await expect(service.refresh("reused-refresh")).rejects.toThrow("Refresh token revoked");
+    await expect(
+      service.refresh("stale-refresh")
+    ).rejects.toMatchObject({
+      response: expect.objectContaining({
+        code: "REFRESH_TOKEN_STALE"
+      })
+    });
 
-    expect(users.updateRefreshToken).toHaveBeenCalledWith(userId);
-    expect(audit.audit).toHaveBeenCalledWith(expect.objectContaining({ action: "refresh_token_reuse_detected" }));
+    expect(users.updateRefreshToken).not.toHaveBeenCalled();
+    expect(audit.audit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "refresh_token_stale"
+      })
+    );
+  });
+
+  it("does not fail login when audit storage is unavailable", async () => {
+    const { service, audit } = makeService();
+    audit.audit.mockRejectedValueOnce(
+      new Error("audit unavailable")
+    );
+
+    await expect(
+      service.login({
+        email: activeUser.email,
+        password: "password"
+      })
+    ).resolves.toEqual(
+      expect.objectContaining({
+        accessToken: "access-token"
+      })
+    );
   });
 
   it("logout clears only a matching current refresh token", async () => {

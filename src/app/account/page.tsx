@@ -16,6 +16,8 @@ export default function AccountPage() {
   const logout = useAuthStore((state) => state.logout);
   const setPageLoading = useUiStore((state) => state.setPageLoading);
   const [saved, setSaved] = useState(false);
+  const [logoutError, setLogoutError] =
+    useState<string | null>(null);
 
   const save = () => {
     setSaved(true);
@@ -23,9 +25,19 @@ export default function AccountPage() {
   };
 
   const signOut = async () => {
-    await logout();
-    setPageLoading(true);
-    router.replace("/login");
+    setLogoutError(null);
+
+    try {
+      await logout();
+      setPageLoading(true);
+      router.replace("/login");
+    } catch (error) {
+      setLogoutError(
+        error instanceof Error
+          ? error.message
+          : "Sign out failed. Please retry."
+      );
+    }
   };
 
   return (
@@ -41,6 +53,11 @@ export default function AccountPage() {
         </div>
       </div>
       {saved ? <p className="rounded-card border border-success/25 bg-success/10 px-4 py-3 text-sm text-success">Account preferences saved locally.</p> : null}
+      {logoutError ? (
+        <p className="rounded-card border border-danger/25 bg-danger/10 px-4 py-3 text-sm text-danger">
+          {logoutError}
+        </p>
+      ) : null}
 
       <div className="grid gap-6 xl:grid-cols-2">
         <SettingsSection title="Personal Info" description="Profile details visible across the mocked A.L.F.R.E.D. workspace.">

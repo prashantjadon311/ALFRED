@@ -1,5 +1,4 @@
 import { Injectable } from "@nestjs/common";
-import { AiModelsRepository } from "../../repositories/ai-models.repository";
 import { PricingSnapshotsRepository } from "../../repositories/pricing-snapshots.repository";
 import { NormalizedUsage } from "../../llm/interfaces/llm.types";
 
@@ -11,33 +10,39 @@ export interface CostCalculation {
 
 @Injectable()
 export class PricingService {
-  constructor(
-    private readonly snapshots: PricingSnapshotsRepository,
-    private readonly aiModels: AiModelsRepository
-  ) {}
+  constructor(private readonly snapshots: PricingSnapshotsRepository) {}
 
   async calculateCost(input: {
     providerType: string;
     modelName: string;
+    requestedModelName?: string;
     usage: NormalizedUsage;
     requestedAt: Date;
   }): Promise<CostCalculation> {
-    const snapshot = await this.resolveSnapshot(input.providerType, input.modelName, input.requestedAt);
+    const snapshot = await this.resolveSnapshot(
+      input.providerType,
+      [input.modelName, input.requestedModelName],
+      input.requestedAt
+    );
     if (!snapshot) return { costUsd: 0, costSource: "unavailable" };
 
-    const cachedInputTokens = Math.min(input.usage.inputTokens, input.usage.cachedInputTokens ?? 0);
+    const inputTokens = Math.max(0, input.usage.inputTokens);
+    const cachedReadTokens = Math.min(inputTokens, input.usage.cachedInputTokens ?? 0);
+    const remainingAfterRead = inputTokens - cachedReadTokens;
+    const cacheWriteTokens = Math.min(remainingAfterRead, input.usage.cacheWriteInputTokens ?? 0);
+    const regularInputTokens = inputTokens - cachedReadTokens - cacheWriteTokens;
+    const cachedReadRate = snapshot.cachedInputUsdPerMTok ?? snapshot.inputUsdPerMTok;
+    const cacheWriteRate = snapshot.cacheWriteInputUsdPerMTok ?? snapshot.inputUsdPerMTok;
     const reasoningTokens = Math.min(input.usage.outputTokens, input.usage.reasoningTokens ?? 0);
-    const regularInputTokens = snapshot.cachedInputUsdPerMTok === undefined
-      ? input.usage.inputTokens
-      : input.usage.inputTokens - cachedInputTokens;
     const regularOutputTokens = snapshot.reasoningUsdPerMTok === undefined
       ? input.usage.outputTokens
       : input.usage.outputTokens - reasoningTokens;
 
     const cost = (
       regularInputTokens * snapshot.inputUsdPerMTok
+      + cachedReadTokens * cachedReadRate
+      + cacheWriteTokens * cacheWriteRate
       + regularOutputTokens * snapshot.outputUsdPerMTok
-      + (snapshot.cachedInputUsdPerMTok === undefined ? 0 : cachedInputTokens * snapshot.cachedInputUsdPerMTok)
       + (snapshot.reasoningUsdPerMTok === undefined ? 0 : reasoningTokens * snapshot.reasoningUsdPerMTok)
     ) / 1_000_000;
 
@@ -48,17 +53,27 @@ export class PricingService {
     };
   }
 
-  async resolveSnapshot(providerType: string, modelName: string, requestedAt: Date) {
-    const exact = await this.snapshots.findEffective(providerType, [modelName], requestedAt);
-    if (exact[0]) return exact[0];
+  async resolveSnapshot(
+    providerType: string,
+    modelNames: Array<string | undefined>,
+    requestedAt: Date
+  ) {
+    const candidates = [...new Set(
+      modelNames
+        .map((name) => name?.trim())
+        .filter((name): name is string => Boolean(name))
+    )];
 
-    const aliases = await this.aiModels.collection().find({
-      providerType,
-      $or: [{ name: modelName }, { displayName: modelName }]
-    } as any).project({ name: 1 }).toArray();
-    const canonicalNames = [...new Set(aliases.map((model) => model.name).filter((name): name is string => typeof name === "string"))];
-    if (canonicalNames.length !== 1 || canonicalNames[0] === modelName) return undefined;
-    const aliased = await this.snapshots.findEffective(providerType, canonicalNames, requestedAt);
-    return aliased[0];
+    for (const modelName of candidates) {
+      const matches = await this.snapshots.findEffective(
+        providerType,
+        [modelName],
+        requestedAt
+      );
+
+      if (matches[0]) return matches[0];
+    }
+
+    return undefined;
   }
 }

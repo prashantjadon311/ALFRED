@@ -27,8 +27,10 @@ function normalizeModel(model: any): ModelConfig {
     provider: model.providerType ?? model.provider ?? "mock",
     name: model.displayName ?? model.name,
     contextWindow: model.contextWindow ?? 0,
-    inputCost: model.inputCostPer1k ?? model.inputCost ?? 0,
-    outputCost: model.outputCostPer1k ?? model.outputCost ?? 0,
+    inputCost:
+      (model.inputCostPer1k ?? model.inputCost ?? 0) * 1000,
+    outputCost:
+      (model.outputCostPer1k ?? model.outputCost ?? 0) * 1000,
     defaultRole: model.defaultRole ?? "assistant",
     enabled: Boolean(model.enabled)
   };
@@ -69,7 +71,10 @@ export const modelService = {
   },
 
   updateModel: async (id: string, patch: Partial<ModelConfig>): Promise<ModelConfig> => {
-    if (isApiMode()) return normalizeModel(await api.patch<any>(`/models/${id}`, { enabled: patch.enabled, defaultRole: patch.defaultRole, inputCostPer1k: patch.inputCost, outputCostPer1k: patch.outputCost }));
+    if (isApiMode()) return normalizeModel(await api.patch<any>(`/models/${id}`, {
+      enabled: patch.enabled,
+      defaultRole: patch.defaultRole
+    }));
     await wait();
     const model = mockModels.find((item) => item.id === id) ?? mockModels[0];
     return { ...model, ...patch };

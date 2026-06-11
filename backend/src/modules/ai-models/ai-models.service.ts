@@ -13,7 +13,7 @@ export class AiModelsService {
     return { items: this.repo.serializeMany(result.items), total: result.total };
   }
 
-  async update(userId: ObjectId, id: ObjectId, body: { enabled?: boolean; defaultRole?: string; displayName?: string; inputCostPer1k?: number; outputCostPer1k?: number }) {
+  async update(userId: ObjectId, id: ObjectId, body: { enabled?: boolean; defaultRole?: string; displayName?: string }) {
     const doc = await this.repo.updateById(id, userId, body as any);
     if (!doc) throw new NotFoundException("Model not found");
     return this.repo.serialize(doc);

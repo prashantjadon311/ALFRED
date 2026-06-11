@@ -15,7 +15,7 @@ function snapshot(input: Partial<PricingSnapshotDoc> & Pick<PricingSnapshotDoc, 
   };
 }
 
-function makeService(docs: PricingSnapshotDoc[], aliases: Array<{ name: string }> = []) {
+function makeService(docs: PricingSnapshotDoc[]) {
   const snapshots = {
     collection: jest.fn(() => ({ findOne: jest.fn() })),
     create: jest.fn(),
@@ -30,14 +30,7 @@ function makeService(docs: PricingSnapshotDoc[], aliases: Array<{ name: string }
         .sort((a, b) => b.effectiveFrom.getTime() - a.effectiveFrom.getTime())
     )
   };
-  const aiModels = {
-    collection: jest.fn(() => ({
-      find: jest.fn(() => ({
-        project: jest.fn(() => ({ toArray: jest.fn(async () => aliases) }))
-      }))
-    }))
-  };
-  return new PricingService(snapshots as any, aiModels as any);
+  return new PricingService(snapshots as any);
 }
 
 describe("PricingService", () => {
@@ -46,7 +39,7 @@ describe("PricingService", () => {
     const june = snapshot({ modelName: "gpt-test", effectiveFrom: new Date("2026-06-01T00:00:00Z"), inputUsdPerMTok: 4 });
     const service = makeService([january, june]);
 
-    const resolved = await service.resolveSnapshot("openai", "gpt-test", new Date("2026-03-01T00:00:00Z"));
+    const resolved = await service.resolveSnapshot("openai", ["gpt-test"], new Date("2026-03-01T00:00:00Z"));
 
     expect(resolved?._id).toEqual(january._id);
   });
@@ -85,6 +78,30 @@ describe("PricingService", () => {
     expect(result.costSource).toBe("estimated");
   });
 
+  it("uses separate cache-read and cache-write input rates", async () => {
+    const service = makeService([snapshot({
+      modelName: "gpt-test",
+      effectiveFrom: new Date(0),
+      cachedInputUsdPerMTok: 0.5,
+      cacheWriteInputUsdPerMTok: 3
+    })]);
+
+    const result = await service.calculateCost({
+      providerType: "openai",
+      modelName: "gpt-test",
+      usage: {
+        inputTokens: 1000,
+        outputTokens: 0,
+        cachedInputTokens: 300,
+        cacheWriteInputTokens: 200,
+        usageSource: "exact"
+      },
+      requestedAt: new Date()
+    });
+
+    expect(result.costUsd).toBe(0.00175);
+  });
+
   it("returns unavailable instead of an exact zero when pricing is missing", async () => {
     const result = await makeService([]).calculateCost({
       providerType: "openai",
@@ -96,12 +113,28 @@ describe("PricingService", () => {
     expect(result).toEqual({ costUsd: 0, costSource: "unavailable" });
   });
 
-  it("resolves an unambiguous existing model alias", async () => {
-    const canonical = snapshot({ modelName: "gpt-test", effectiveFrom: new Date(0) });
-    const service = makeService([canonical], [{ name: "gpt-test" }, { name: "gpt-test" }]);
+  it("falls back from provider-returned model to requested model", async () => {
+    const configured = snapshot({
+      modelName: "gpt-configured",
+      effectiveFrom: new Date(0)
+    });
 
-    const resolved = await service.resolveSnapshot("openai", "GPT Test", new Date());
+    const service = makeService([configured]);
 
-    expect(resolved?._id).toEqual(canonical._id);
+    const result = await service.calculateCost({
+      providerType: "openai",
+      modelName: "gpt-configured-2026-06-01",
+      requestedModelName: "gpt-configured",
+      usage: {
+        inputTokens: 1000,
+        outputTokens: 500,
+        usageSource: "exact"
+      },
+      requestedAt: new Date()
+    });
+
+    expect(result.pricingSnapshotId).toBe(
+      configured._id?.toHexString()
+    );
   });
 });

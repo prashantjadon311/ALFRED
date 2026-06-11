@@ -19,6 +19,7 @@ export class AuthController {
   async register(@Body(zodPipe(registerSchema)) body: any, @Res({ passthrough: true }) reply: FastifyReply) {
     const { refreshToken, ...response } = await this.auth.register(body);
     this.cookies.setRefreshCookie(reply, refreshToken);
+    this.cookies.applyNoStore(reply);
     return ok(response);
   }
 
@@ -27,6 +28,7 @@ export class AuthController {
   async login(@Body(zodPipe(loginSchema)) body: any, @Res({ passthrough: true }) reply: FastifyReply) {
     const { refreshToken, ...response } = await this.auth.login(body);
     this.cookies.setRefreshCookie(reply, refreshToken);
+    this.cookies.applyNoStore(reply);
     return ok(response);
   }
 
@@ -36,6 +38,7 @@ export class AuthController {
   async refresh(@Req() request: FastifyRequest, @Res({ passthrough: true }) reply: FastifyReply) {
     const { refreshToken, ...response } = await this.auth.refresh(this.cookies.requireRefreshToken(request));
     this.cookies.setRefreshCookie(reply, refreshToken);
+    this.cookies.applyNoStore(reply);
     return ok(response);
   }
 
@@ -43,9 +46,17 @@ export class AuthController {
   @HttpCode(200)
   @UseGuards(AuthOriginGuard)
   async logout(@Req() request: FastifyRequest, @Res({ passthrough: true }) reply: FastifyReply) {
-    await this.auth.logoutByRefreshToken(this.cookies.getRefreshToken(request));
-    this.cookies.clearRefreshCookie(reply);
-    return ok({ loggedOut: true });
+    this.cookies.applyNoStore(reply);
+
+    try {
+      await this.auth.logoutByRefreshToken(
+        this.cookies.getRefreshToken(request)
+      );
+
+      return ok({ loggedOut: true });
+    } finally {
+      this.cookies.clearRefreshCookie(reply);
+    }
   }
 
   @ApiBearerAuth() @UseGuards(JwtAuthGuard) @Get("me") async me(@CurrentUser() user: any) { return ok(await this.auth.me(user.userId)); }

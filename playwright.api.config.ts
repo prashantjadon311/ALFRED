@@ -19,9 +19,12 @@ export default defineConfig({
       command: "npm run dev:infra && npm run dev:backend",
       url: "http://localhost:4000/health/live",
       timeout: 120000,
-      reuseExistingServer: true,
+      reuseExistingServer: false,
       env: {
-        FRONTEND_URL: "http://localhost:3101"
+        FRONTEND_URL: "http://localhost:3101",
+        JWT_ACCESS_TTL: "2s",
+        AUTH_REFRESH_COOKIE_SAME_SITE: "lax",
+        AUTH_REFRESH_COOKIE_SECURE: "false"
       }
     },
     {

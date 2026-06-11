@@ -30,14 +30,24 @@ export function AppInitializer() {
     initialized.current = true;
     let cancelled = false;
 
-    void loadMe().then(async () => {
+    void (async () => {
+      const authState = useAuthStore.getState();
+
+      if (authState.initialized && authState.user) {
+        await hydrateWorkspaces();
+        return;
+      }
+
+      await loadMe();
+
       if (cancelled) return;
+
       if (useAuthStore.getState().user) {
         await hydrateWorkspaces();
       } else if (!cancelled) {
         router.replace("/login");
       }
-    });
+    })();
 
     return () => {
       cancelled = true;

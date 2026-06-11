@@ -2,6 +2,7 @@
 
 import { CreditCard, Keyboard, LogOut, Moon, Settings, SlidersHorizontal, Sun, UserRound } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { useState } from "react";
 import { useAuthStore } from "@/store/auth-store";
 import { useUiStore } from "@/store/ui-store";
 import { useWorkspaceStore } from "@/store/workspace-store";
@@ -13,10 +14,23 @@ export function UserMenuPanel({ close }: { close: () => void }) {
   const theme = useUiStore((state) => state.theme);
   const toggleTheme = useUiStore((state) => state.toggleTheme);
   const activeWorkspaceId = useWorkspaceStore((state) => state.activeWorkspaceId);
+  const [logoutError, setLogoutError] =
+    useState<string | null>(null);
 
   const signOut = async () => {
-    await logout();
-    router.replace("/login");
+    setLogoutError(null);
+
+    try {
+      await logout();
+      close();
+      router.replace("/login");
+    } catch (error) {
+      setLogoutError(
+        error instanceof Error
+          ? error.message
+          : "Sign out failed."
+      );
+    }
   };
 
   const navigate = (path: string) => {
@@ -76,6 +90,11 @@ export function UserMenuPanel({ close }: { close: () => void }) {
       </div>
 
       <div className="mt-2 border-t border-surface-darkBorder pt-2">
+        {logoutError ? (
+          <p className="mb-2 rounded-card border border-danger/25 bg-danger/10 px-3 py-2 text-xs text-danger">
+            {logoutError}
+          </p>
+        ) : null}
         <button
           type="button"
           className="flex w-full items-center gap-2 rounded-button px-2.5 py-2 text-left text-sm text-danger transition hover:bg-danger/10"

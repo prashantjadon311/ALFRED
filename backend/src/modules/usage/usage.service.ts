@@ -7,7 +7,7 @@ import { ChatsRepository } from "../../repositories/chats.repository";
 import { ChatOutput } from "../../llm/interfaces/llm.types";
 
 type UsageRecordInput = Pick<ChatOutput,
-  "providerType" | "modelName" | "inputTokens" | "outputTokens" | "cachedInputTokens" | "reasoningTokens" |
+  "providerType" | "modelName" | "inputTokens" | "outputTokens" | "cachedInputTokens" | "cacheWriteInputTokens" | "reasoningTokens" |
   "costUsd" | "pricingSnapshotId" | "usageSource" | "costSource" | "calculatedAt" | "latencyMs"
 > & {
   userId: ObjectId;

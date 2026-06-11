@@ -40,11 +40,8 @@ export const useAuthStore = create<AuthStore>((set) => ({
   },
 
   logout: async () => {
-    try {
-      await authService.logout();
-    } finally {
-      set({ user: null, initialized: true });
-    }
+    await authService.logout();
+    set({ user: null, initialized: true });
   },
 
   loadMe: async () => {

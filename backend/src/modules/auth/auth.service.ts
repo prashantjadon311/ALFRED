@@ -1,4 +1,9 @@
-import { ConflictException, Injectable, UnauthorizedException } from "@nestjs/common";
+import {
+  ConflictException,
+  Injectable,
+  Logger,
+  UnauthorizedException
+} from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
 import { ConfigService } from "@nestjs/config";
 import * as bcrypt from "bcryptjs";
@@ -6,7 +11,7 @@ import { ObjectId } from "mongodb";
 import { UsersRepository } from "../../repositories/users.repository";
 import { AuditLogsRepository } from "../../repositories/audit-logs.repository";
 import { UserProvisioningService } from "./user-provisioning.service";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 type TokenType = "access" | "refresh";
 
@@ -18,6 +23,8 @@ type IssuedSession = {
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private readonly users: UsersRepository,
     private readonly jwt: JwtService,
@@ -32,7 +39,7 @@ export class AuthService {
     const passwordHash = await bcrypt.hash(input.password, 12);
     const user = await this.users.create({ name: input.name, email, passwordHash, role: "user", status: "active", createdAt: new Date() } as any);
     await this.provisioning.provision(user!._id!);
-    await this.audit.audit({ userId: user!._id, entityType: "user", entityId: user!._id!.toHexString(), action: "register" });
+    await this.auditSafely({ userId: user!._id, entityType: "user", entityId: user!._id!.toHexString(), action: "register" });
     return this.issueTokens(user!);
   }
 
@@ -40,7 +47,7 @@ export class AuthService {
     const user = await this.users.findByEmail(input.email.toLowerCase());
     if (!user || !(await bcrypt.compare(input.password, user.passwordHash))) throw new UnauthorizedException("Invalid credentials");
     if (user.status !== "active") throw new UnauthorizedException("Invalid credentials");
-    await this.audit.audit({ userId: user._id, entityType: "user", entityId: user._id!.toHexString(), action: "login" });
+    await this.auditSafely({ userId: user._id, entityType: "user", entityId: user._id!.toHexString(), action: "login" });
     return this.issueTokens(user);
   }
 
@@ -61,13 +68,18 @@ export class AuthService {
     const user = await this.users.findById(userId);
     if (!user || user.status !== "active") throw new UnauthorizedException("Refresh token revoked");
     if (!user.refreshTokenHash) throw new UnauthorizedException("Refresh token revoked");
-    if (!(await bcrypt.compare(refreshToken, user.refreshTokenHash))) {
-      await this.users.updateRefreshToken(user._id!);
-      await this.audit.audit({ userId: user._id, entityType: "user", entityId: user._id!.toHexString(), action: "refresh_token_reuse_detected" });
-      throw new UnauthorizedException("Refresh token revoked");
+    if (!(await bcrypt.compare(this.refreshTokenMaterial(refreshToken), user.refreshTokenHash))) {
+      await this.auditSafely({
+        userId: user._id,
+        entityType: "user",
+        entityId: user._id!.toHexString(),
+        action: "refresh_token_stale"
+      });
+
+      throw this.staleRefreshToken();
     }
     const session = await this.issueTokens(user, user.refreshTokenHash);
-    await this.audit.audit({ userId: user._id, entityType: "user", entityId: user._id!.toHexString(), action: "refresh" });
+    await this.auditSafely({ userId: user._id, entityType: "user", entityId: user._id!.toHexString(), action: "refresh" });
     return session;
   }
 
@@ -87,9 +99,9 @@ export class AuthService {
       return;
     }
     const user = await this.users.findById(userId);
-    if (!user?.refreshTokenHash || !(await bcrypt.compare(refreshToken, user.refreshTokenHash))) return;
+    if (!user?.refreshTokenHash || !(await bcrypt.compare(this.refreshTokenMaterial(refreshToken), user.refreshTokenHash))) return;
     await this.users.updateRefreshToken(user._id!);
-    await this.audit.audit({ userId: user._id, entityType: "user", entityId: user._id!.toHexString(), action: "logout" });
+    await this.auditSafely({ userId: user._id, entityType: "user", entityId: user._id!.toHexString(), action: "logout" });
   }
 
   async me(userId: string) {
@@ -98,14 +110,37 @@ export class AuthService {
     return this.users.serialize(user);
   }
 
+  private staleRefreshToken() {
+    return new UnauthorizedException({
+      code: "REFRESH_TOKEN_STALE",
+      message: "Refresh token was rotated or revoked"
+    });
+  }
+
+  private async auditSafely(input: Parameters<AuditLogsRepository["audit"]>[0]) {
+    try {
+      await this.audit.audit(input);
+    } catch (error) {
+      this.logger.warn(
+        `Auth audit failed for ${input.action}: ${
+          error instanceof Error ? error.message : "unknown error"
+        }`
+      );
+    }
+  }
+
+  private refreshTokenMaterial(refreshToken: string) {
+    return createHash("sha256").update(refreshToken).digest("hex");
+  }
+
   private async issueTokens(user: any, currentRefreshTokenHash?: string): Promise<IssuedSession> {
     const identity = { sub: user._id.toHexString(), email: user.email, role: user.role };
     const accessToken = await this.jwt.signAsync({ ...identity, tokenType: "access" satisfies TokenType }, { secret: this.config.get<string>("accessSecret"), expiresIn: this.config.get<string>("accessTtl") });
     const refreshToken = await this.jwt.signAsync({ ...identity, tokenType: "refresh" satisfies TokenType, jti: randomUUID() }, { secret: this.config.get<string>("refreshSecret"), expiresIn: this.config.get<string>("refreshTtl") });
-    const refreshTokenHash = await bcrypt.hash(refreshToken, 12);
+    const refreshTokenHash = await bcrypt.hash(this.refreshTokenMaterial(refreshToken), 12);
     if (currentRefreshTokenHash) {
       const rotated = await this.users.rotateRefreshToken(user._id, currentRefreshTokenHash, refreshTokenHash);
-      if (rotated.matchedCount !== 1) throw new UnauthorizedException("Refresh token revoked");
+      if (rotated.matchedCount !== 1) throw this.staleRefreshToken();
     } else {
       await this.users.updateRefreshToken(user._id, refreshTokenHash);
     }

@@ -1,7 +1,11 @@
+"use client";
+
 type ApiEnvelope<T> = { data: T; meta?: Record<string, unknown> };
 type RequestOptions = { method?: string; body?: unknown; timeoutMs?: number };
 
 const DEFAULT_TIMEOUT_MS = 8000;
+const REFRESH_TIMEOUT_MS = 8000;
+const STALE_REFRESH_RETRY_DELAY_MS = 150;
 const inflightGets = new Map<string, Promise<unknown>>();
 const getCache = new Map<string, { expiresAt: number; value: unknown }>();
 const WORKSPACE_STORAGE_KEY = "alfred_workspaces_state";
@@ -16,6 +20,24 @@ export class ApiError extends Error {
     super(message);
     this.name = "ApiError";
   }
+}
+
+function errorCode(error: unknown) {
+  if (!(error instanceof ApiError)) return undefined;
+
+  const payload = error.payload as
+    | { error?: { code?: unknown } }
+    | undefined;
+
+  return typeof payload?.error?.code === "string"
+    ? payload.error.code
+    : undefined;
+}
+
+function delay(ms: number) {
+  return new Promise<void>((resolve) => {
+    globalThis.setTimeout(resolve, ms);
+  });
 }
 
 export function isApiMode() {
@@ -85,27 +107,86 @@ async function parseResponse<T>(response: Response): Promise<T> {
   return (payload && typeof payload === "object" && "data" in payload ? (payload as ApiEnvelope<T>).data : payload) as T;
 }
 
+async function requestRefreshOnce() {
+  const controller = new AbortController();
+
+  const timeout = globalThis.setTimeout(
+    () => controller.abort(),
+    REFRESH_TIMEOUT_MS
+  );
+
+  try {
+    const response = await fetch(`${baseUrl()}/auth/refresh`, {
+      method: "POST",
+      credentials: "include",
+      signal: controller.signal
+    });
+
+    const data = await parseResponse<{
+      user: unknown;
+      accessToken: string;
+    }>(response);
+
+    setAccessToken(data.accessToken);
+    return data;
+  } finally {
+    globalThis.clearTimeout(timeout);
+  }
+}
+
 export async function refreshAccessToken() {
-  if (!isApiMode()) throw new ApiError("Refresh is unavailable in mock mode", 400);
+  if (typeof window === "undefined") {
+    throw new ApiError(
+      "Browser authentication runtime required",
+      0
+    );
+  }
+
+  if (!isApiMode()) {
+    throw new ApiError(
+      "Refresh is unavailable in mock mode",
+      400
+    );
+  }
+
   if (refreshPromise) return refreshPromise;
+
   refreshPromise = (async () => {
     try {
-      const response = await fetch(`${baseUrl()}/auth/refresh`, {
-        method: "POST",
-        credentials: "include"
-      });
-      const data = await parseResponse<{ user: unknown; accessToken: string }>(response);
-      setAccessToken(data.accessToken);
-      return data;
+      try {
+        return await requestRefreshOnce();
+      } catch (error) {
+        if (errorCode(error) !== "REFRESH_TOKEN_STALE") {
+          throw error;
+        }
+
+        // Another tab/request may have rotated the shared cookie.
+        await delay(STALE_REFRESH_RETRY_DELAY_MS);
+        return requestRefreshOnce();
+      }
     } catch (error) {
-      clearAccessToken();
-      dispatchAuthExpired();
+      if (
+        error instanceof ApiError &&
+        (error.status === 401 || error.status === 403)
+      ) {
+        clearAccessToken();
+        dispatchAuthExpired();
+      }
+
       if (error instanceof ApiError) throw error;
-      throw new ApiError(error instanceof Error ? error.message : "Session refresh failed", 0, error);
+
+      throw new ApiError(
+        error instanceof Error
+          ? error.message
+          : "Session refresh failed",
+        0,
+        error
+      );
     } finally {
       refreshPromise = null;
     }
   })();
+
   return refreshPromise;
 }
 

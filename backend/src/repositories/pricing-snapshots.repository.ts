@@ -10,6 +10,7 @@ export interface PricingSnapshotDoc {
   inputUsdPerMTok: number;
   outputUsdPerMTok: number;
   cachedInputUsdPerMTok?: number;
+  cacheWriteInputUsdPerMTok?: number;
   reasoningUsdPerMTok?: number;
   effectiveFrom: Date;
   effectiveTo?: Date;

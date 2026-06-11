@@ -11,10 +11,12 @@ export class MockLlmProvider implements LlmProvider {
     const content = this.mockContent(input);
     const inputTokens = await this.estimateTokens(`${input.systemPrompt ?? ""}\n${input.prompt}`);
     const outputTokens = await this.estimateTokens(content);
+    const requestedModelName = input.modelName ?? this.modelForNode(input.nodeKey);
     return {
       content,
       providerType: input.providerType ?? "mock",
-      modelName: input.modelName ?? this.modelForNode(input.nodeKey),
+      modelName: requestedModelName,
+      requestedModelName,
       inputTokens,
       outputTokens,
       usageSource: "estimated",

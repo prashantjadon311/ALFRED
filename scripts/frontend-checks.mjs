@@ -141,13 +141,23 @@ assert.ok(!apiClientSource.includes("alfred_access_token"));
 assert.ok(!apiClientSource.includes("alfred_refresh_token"));
 assert.ok(apiClientSource.includes('credentials: "include"'));
 assert.ok(apiClientSource.includes("refreshPromise"));
+assert.ok(apiClientSource.includes("REFRESH_TOKEN_STALE"));
 assert.equal((apiClientSource.match(/!retried/g) ?? []).length, 1);
+assert.ok(apiClientSource.includes("(error.status === 401 || error.status === 403)"));
 
 for (const relativePath of ["src/services/auth-service.ts", "src/store/auth-store.ts"]) {
   const source = fs.readFileSync(path.join(root, relativePath), "utf8");
   for (const removedImport of ["setTokens", "clearTokens", "getToken"]) {
     assert.ok(!source.includes(removedImport), `${relativePath} should not reference ${removedImport}`);
   }
+  const logoutStart = source.indexOf("logout: async");
+  const logoutEnd = source.indexOf("\n  }", logoutStart);
+  assert.ok(logoutStart >= 0 && logoutEnd > logoutStart, `${relativePath} should define logout`);
+  const logoutSource = source.slice(logoutStart, logoutEnd);
+  assert.ok(
+    !logoutSource.includes("finally"),
+    `${relativePath} logout should not use finally`
+  );
 }
 
 console.log("Frontend confidence checks passed.");

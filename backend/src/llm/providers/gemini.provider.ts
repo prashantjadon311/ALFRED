@@ -48,6 +48,7 @@ export class GeminiProvider implements LlmProvider {
       content,
       providerType: this.providerType,
       modelName,
+      requestedModelName: modelName,
       ...usage,
       latencyMs: Date.now() - started,
       raw: { usageMetadata: json?.usageMetadata }

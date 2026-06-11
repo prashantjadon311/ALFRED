@@ -7,6 +7,7 @@ import { zodPipe } from "../../common/pipes/zod-validation.pipe";
 import { RequestUser } from "../../common/types/request-user";
 import { ok } from "../../contracts/api-response.types";
 import { LlmRouterService } from "../../llm/llm-router.service";
+import { PricingService } from "../pricing/pricing.service";
 import { UsageService } from "../usage/usage.service";
 import { WorkspaceScopeService } from "../workspaces/workspace-scope.service";
 
@@ -26,16 +27,21 @@ const compareSchema = z.object({
 });
 
 const estimateCostSchema = z.object({
-  inputText: z.string(),
-  outputText: z.string().optional(),
-  inputCostPer1k: z.number().default(0.002),
-  outputCostPer1k: z.number().default(0.006)
+  providerType: z.string().min(1),
+  modelName: z.string().min(1),
+  inputText: z.string().max(100000),
+  outputText: z.string().max(100000).optional()
 });
 
 @UseGuards(JwtAuthGuard)
 @Controller("llm")
 export class LlmGatewayController {
-  constructor(private readonly llm: LlmRouterService, private readonly usage: UsageService, private readonly scope: WorkspaceScopeService) {}
+  constructor(
+    private readonly llm: LlmRouterService,
+    private readonly usage: UsageService,
+    private readonly scope: WorkspaceScopeService,
+    private readonly pricing: PricingService
+  ) {}
 
   @Post("chat")
   async chat(@CurrentUser() u: RequestUser, @Headers("x-workspace-id") workspaceHeader: string | undefined, @Body(zodPipe(chatSchema)) body: z.infer<typeof chatSchema>) {
@@ -49,6 +55,7 @@ export class LlmGatewayController {
       inputTokens: result.inputTokens,
       outputTokens: result.outputTokens,
       cachedInputTokens: result.cachedInputTokens,
+      cacheWriteInputTokens: result.cacheWriteInputTokens,
       reasoningTokens: result.reasoningTokens,
       costUsd: result.costUsd,
       pricingSnapshotId: result.pricingSnapshotId,
@@ -78,6 +85,7 @@ export class LlmGatewayController {
         inputTokens: result.value.inputTokens,
         outputTokens: result.value.outputTokens,
         cachedInputTokens: result.value.cachedInputTokens,
+        cacheWriteInputTokens: result.value.cacheWriteInputTokens,
         reasoningTokens: result.value.reasoningTokens,
         costUsd: result.value.costUsd,
         pricingSnapshotId: result.value.pricingSnapshotId,
@@ -94,11 +102,34 @@ export class LlmGatewayController {
   }
 
   @Post("estimate-cost")
-  async estimateCost(@CurrentUser() _u: RequestUser, @Body(zodPipe(estimateCostSchema)) body: z.infer<typeof estimateCostSchema>) {
+  async estimateCost(
+    @CurrentUser() _u: RequestUser,
+    @Body(zodPipe(estimateCostSchema))
+    body: z.infer<typeof estimateCostSchema>
+  ) {
     const inputTokens = await this.llm.estimateTokens(body.inputText);
-    const outputTokens = body.outputText ? await this.llm.estimateTokens(body.outputText) : 0;
-    const inputCost = (inputTokens / 1000) * body.inputCostPer1k;
-    const outputCost = (outputTokens / 1000) * body.outputCostPer1k;
-    return ok({ inputTokens, outputTokens, inputCost: Number(inputCost.toFixed(6)), outputCost: Number(outputCost.toFixed(6)), totalCost: Number((inputCost + outputCost).toFixed(6)) });
+    const outputTokens = body.outputText
+      ? await this.llm.estimateTokens(body.outputText)
+      : 0;
+
+    const usage = {
+      inputTokens,
+      outputTokens,
+      usageSource: "estimated" as const
+    };
+
+    const cost = await this.pricing.calculateCost({
+      providerType: body.providerType,
+      modelName: body.modelName,
+      requestedModelName: body.modelName,
+      usage,
+      requestedAt: new Date()
+    });
+
+    return ok({
+      ...usage,
+      ...cost,
+      calculatedAt: new Date()
+    });
   }
 }
