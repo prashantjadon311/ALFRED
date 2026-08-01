@@ -1,0 +1,275 @@
+# Manual GitHub publishing is a repository invariant.
+prefix_rule(
+    pattern = [["/usr/bin/git", "/bin/git", "/usr/bin/gh", "/bin/gh"]],
+    decision = "forbidden",
+    justification = "Absolute executable paths bypass command-name safeguards; invoke only direct read-only git/gh subcommands by name.",
+    match = ["/usr/bin/git push origin main", "/bin/git commit -m change", "/usr/bin/gh pr create"],
+    not_match = ["git status", "gh pr view 12"],
+)
+
+prefix_rule(
+    pattern = ["command", ["git", "gh"]],
+    decision = "forbidden",
+    justification = "Shell command indirection bypasses Git/GitHub safeguards.",
+    match = ["command git push origin main", "command gh pr create"],
+    not_match = ["git status", "gh pr view 12"],
+)
+
+prefix_rule(
+    pattern = ["git", "push"],
+    decision = "forbidden",
+    justification = "Git pushes are manual; leave the local diff for the user.",
+    match = ["git push", "git push origin main", "git push --force-with-lease origin main"],
+    not_match = ["git status", "git fetch origin"],
+)
+
+prefix_rule(
+    pattern = ["gh", "pr", "create"],
+    decision = "forbidden",
+    justification = "Pull-request creation is intentionally disabled; the user publishes manually.",
+    match = ["gh pr create", "gh pr create --draft --title change"],
+    not_match = ["gh pr view 12", "gh pr checks 12"],
+)
+
+prefix_rule(
+    pattern = ["gh", "repo", "sync"],
+    decision = "forbidden",
+    justification = "Repository synchronization can push refs; leave GitHub publishing to the user.",
+    match = ["gh repo sync", "gh repo sync owner/repo --force"],
+    not_match = ["gh repo view owner/repo"],
+)
+
+prefix_rule(
+    pattern = ["gh", "api"],
+    decision = "forbidden",
+    justification = "GitHub API calls can publish refs or create pull requests; use read-only gh subcommands or manual GitHub actions.",
+    match = ["gh api repos/owner/repo/git/refs", "gh api --method POST repos/owner/repo/pulls"],
+    not_match = ["gh pr view 12"],
+)
+
+prefix_rule(
+    pattern = ["gh", ["release", "gist", "repo"], "create"],
+    decision = "forbidden",
+    justification = "Creating GitHub releases, gists, or repositories uploads/publishes content; the user publishes manually.",
+    match = ["gh release create v1.0.0", "gh gist create report.txt", "gh repo create owner/repo"],
+    not_match = ["gh release list", "gh repo view owner/repo"],
+)
+
+prefix_rule(
+    pattern = ["gh", "release", "upload"],
+    decision = "forbidden",
+    justification = "Release asset uploads are manual.",
+    match = ["gh release upload v1.0.0 artifact.zip"],
+    not_match = ["gh release view v1.0.0"],
+)
+
+prefix_rule(
+    pattern = ["gh", ["release", "gist"], ["edit", "delete"]],
+    decision = "forbidden",
+    justification = "Do not mutate published GitHub releases or gists from Codex.",
+    match = ["gh release edit v1.0.0", "gh release delete v1.0.0", "gh gist edit abc123", "gh gist delete abc123"],
+    not_match = ["gh release view v1.0.0", "gh gist list"],
+)
+
+prefix_rule(
+    pattern = ["gh", "pr", ["merge", "close", "reopen", "edit", "review"]],
+    decision = "forbidden",
+    justification = "Pull-request mutation is manual; use read-only PR inspection commands.",
+    match = ["gh pr merge 12", "gh pr close 12", "gh pr edit 12", "gh pr review 12 --approve"],
+    not_match = ["gh pr view 12", "gh pr checks 12"],
+)
+
+prefix_rule(
+    pattern = ["gh", "repo", ["fork", "delete", "rename", "archive", "edit"]],
+    decision = "forbidden",
+    justification = "Do not create or mutate GitHub repositories from Codex.",
+    match = ["gh repo fork owner/repo", "gh repo delete owner/repo", "gh repo edit owner/repo"],
+    not_match = ["gh repo view owner/repo", "gh repo list"],
+)
+
+prefix_rule(
+    pattern = ["gh", "workflow", "run"],
+    decision = "forbidden",
+    justification = "Do not trigger GitHub automation from Codex in this repository.",
+    match = ["gh workflow run deploy.yml"],
+    not_match = ["gh workflow view deploy.yml"],
+)
+
+prefix_rule(
+    pattern = ["gh", "workflow", ["enable", "disable"]],
+    decision = "forbidden",
+    justification = "Do not change GitHub workflow activation from Codex.",
+    match = ["gh workflow enable deploy.yml", "gh workflow disable deploy.yml"],
+    not_match = ["gh workflow view deploy.yml", "gh workflow list"],
+)
+
+# Commits are also outside the manual handoff contract and blocking them prevents --no-verify commits.
+prefix_rule(
+    pattern = ["git", "commit"],
+    decision = "forbidden",
+    justification = "Do not commit or bypass commit hooks; the user owns the Git handoff.",
+    match = ["git commit -m change", "git commit --no-verify -m change"],
+    not_match = ["git diff --cached", "git status"],
+)
+
+prefix_rule(
+    pattern = ["git", ["merge", "rebase", "am", "cherry-pick", "revert"]],
+    decision = "forbidden",
+    justification = "These commands can create or rewrite commits; the user owns the Git handoff.",
+    match = ["git merge topic", "git rebase main", "git am patch.mbox", "git cherry-pick abc123", "git revert abc123"],
+    not_match = ["git status", "git diff"],
+)
+
+prefix_rule(
+    pattern = ["git", "pull"],
+    decision = "forbidden",
+    justification = "Git pull mutates the worktree and may create commits; inspect/fetch manually instead.",
+    match = ["git pull", "git pull --ff-only"],
+    not_match = ["git fetch origin", "git status"],
+)
+
+prefix_rule(
+    pattern = ["git", ["commit-tree", "update-ref"]],
+    decision = "forbidden",
+    justification = "Git plumbing that creates commits or mutates refs bypasses commit/branch safeguards.",
+    match = ["git commit-tree abc123", "git update-ref refs/heads/main abc123"],
+    not_match = ["git rev-parse HEAD", "git status"],
+)
+
+prefix_rule(
+    pattern = ["git", ["-C", "-c", "--git-dir", "--work-tree"]],
+    decision = "forbidden",
+    justification = "Git global-option forms can bypass publishing and destructive-operation rules; run direct read-only Git commands from the repository root.",
+    match = ["git -C . push", "git -c alias.ship=push ship", "git --git-dir .git push"],
+    not_match = ["git status", "git diff"],
+)
+
+prefix_rule(
+    pattern = ["git", "branch"],
+    decision = "forbidden",
+    justification = "Do not create or mutate branches; use git status to inspect the current branch.",
+    match = ["git branch topic", "git branch -D topic", "git branch --show-current"],
+    not_match = ["git status", "git rev-parse --abbrev-ref HEAD"],
+)
+
+prefix_rule(
+    pattern = ["git", ["switch", "checkout", "restore"]],
+    decision = "forbidden",
+    justification = "Do not switch/create branches or restore files; preserve the user's worktree.",
+    match = ["git switch -c topic", "git checkout -b topic", "git checkout -- file.txt", "git restore file.txt"],
+    not_match = ["git status", "git diff"],
+)
+
+prefix_rule(
+    pattern = ["git", "stash"],
+    decision = "forbidden",
+    justification = "Stash commands can mutate or discard the user's worktree; leave stash handling to the user.",
+    match = ["git stash", "git stash push", "git stash apply", "git stash drop", "git stash clear", "git stash pop", "git stash branch topic"],
+    not_match = ["git status", "git diff"],
+)
+
+prefix_rule(
+    pattern = ["git", "worktree", ["add", "remove", "move", "prune", "lock", "unlock", "repair"]],
+    decision = "forbidden",
+    justification = "Do not create, remove, or mutate worktrees for this manual handoff workflow.",
+    match = ["git worktree add ../topic", "git worktree add -b topic ../topic", "git worktree remove ../topic", "git worktree prune"],
+    not_match = ["git worktree list", "git status"],
+)
+
+prefix_rule(
+    pattern = ["git", "send-pack"],
+    decision = "forbidden",
+    justification = "send-pack can publish refs and bypass git push rules.",
+    match = ["git send-pack origin refs/heads/main"],
+    not_match = ["git status"],
+)
+
+# Common destructive local operations require a human decision.
+prefix_rule(
+    pattern = ["git", "reset"],
+    decision = "prompt",
+    justification = "Git reset can discard work; require explicit approval for the resolved target.",
+    match = ["git reset --hard HEAD", "git reset HEAD~1"],
+    not_match = ["git status", "git diff"],
+)
+
+prefix_rule(
+    pattern = ["git", "clean"],
+    decision = "prompt",
+    justification = "Git clean deletes untracked work; require explicit approval for the resolved target.",
+    match = ["git clean -fd", "git clean -fdx"],
+    not_match = ["git status", "git diff"],
+)
+
+prefix_rule(
+    pattern = ["rm"],
+    decision = "prompt",
+    justification = "Deletion requires explicit approval and a narrow resolved target.",
+    match = ["rm file.txt", "rm -rf /tmp/alfred-target"],
+    not_match = ["rmdir empty-directory", "ls file.txt"],
+)
+
+prefix_rule(
+    pattern = ["rmdir"],
+    decision = "prompt",
+    justification = "Directory deletion requires explicit approval and a narrow resolved target.",
+    match = ["rmdir empty-directory"],
+    not_match = ["mkdir new-directory"],
+)
+
+# Credential and secret output is blocked or gated. These are prefix guardrails, not data-flow security.
+prefix_rule(
+    pattern = ["gh", "auth", "token"],
+    decision = "forbidden",
+    justification = "Never print the GitHub authentication token.",
+    match = ["gh auth token", "gh auth token --hostname github.com"],
+    not_match = ["gh auth status"],
+)
+
+prefix_rule(
+    pattern = ["gh", "auth", "status", "--show-token"],
+    decision = "forbidden",
+    justification = "Never include authentication tokens in command output.",
+    match = ["gh auth status --show-token"],
+    not_match = ["gh auth status"],
+)
+
+prefix_rule(
+    pattern = ["git", "credential"],
+    decision = "forbidden",
+    justification = "Git credential commands can expose stored credentials.",
+    match = ["git credential fill", "git credential approve"],
+    not_match = ["git config --get user.email"],
+)
+
+prefix_rule(
+    pattern = ["printenv"],
+    decision = "forbidden",
+    justification = "Printing the full environment can expose credentials and secrets.",
+    match = ["printenv", "printenv OPENAI_API_KEY"],
+    not_match = ["node --version"],
+)
+
+prefix_rule(
+    pattern = ["env"],
+    decision = "prompt",
+    justification = "Environment output or forwarding can expose credentials; require explicit approval.",
+    match = ["env", "env npm test"],
+    not_match = ["npm test"],
+)
+
+prefix_rule(
+    pattern = ["npm", "config"],
+    decision = "prompt",
+    justification = "npm configuration output can contain registry credentials.",
+    match = ["npm config list", "npm config get //registry.npmjs.org/:_authToken"],
+    not_match = ["npm test", "npm run build"],
+)
+
+prefix_rule(
+    pattern = [["cat", "head", "tail", "less", "more"], [".env", ".env.local", "backend/.env"]],
+    decision = "forbidden",
+    justification = "Do not print known secret environment files.",
+    match = ["cat .env", "head backend/.env", "less .env.local"],
+    not_match = ["cat .env.local.example", "cat package.json"],
+)
